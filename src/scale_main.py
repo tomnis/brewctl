@@ -8,7 +8,7 @@ import time
 import influxdb_client
 import os
 from config import *
-from src.LunarScale import LunarScale
+from LunarScale import LunarScale
 
 # TODO this should be async
 scale=LunarScale(COLDBREW_SCALE_MAC_ADDRESS)

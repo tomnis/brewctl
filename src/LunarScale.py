@@ -2,7 +2,7 @@ from pyacaia import AcaiaScale
 from pyacaia import *
 import pyacaia
 
-from src.scale import Scale
+from scale import Scale
 
 
 class LunarScale(Scale):
@@ -20,6 +20,7 @@ class LunarScale(Scale):
 
     # TODO could probably do this in __enter__ ?
     def connect(self):
+        print(f"Connecting to Lunar scale at MAC {self.mac_address}...")
         scale = AcaiaScale(mac=self.mac_address)
         scale.connect()
         return scale
