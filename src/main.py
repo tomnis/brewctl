@@ -1,5 +1,6 @@
 import uuid
 import time
+from contextlib import asynccontextmanager
 
 from pydantic import BaseModel, Field, validator
 
@@ -12,13 +13,13 @@ from valve import Valve
 
 min_steps = 1
 max_steps = 16
+cur_brew_id = None
 
 def initialize_hardware() -> Tuple[Scale, Valve]:
     if COLDBREW_IS_PROD:
         from LunarScale import LunarScale
         from MotorKitValve import MotorKitValve
         s: Scale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
-        s.connect()
         v: Valve = MotorKitValve()
     else:
         from scale import MockScale
@@ -28,9 +29,20 @@ def initialize_hardware() -> Tuple[Scale, Valve]:
     return s, v
 
 scale, valve = initialize_hardware()
-cur_brew_id = None
 
-app = FastAPI()
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the ML model
+    if not scale.connected:
+        scale.connect()
+    yield
+    # Clean up the ML models and release the resources
+    scale.disconnect()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():
@@ -38,6 +50,8 @@ def read_root():
 
 @app.get("/scale")
 def read_weight():
+    if not scale.connected:
+        scale.connect()
     weight = scale.get_weight()
     battery_pct = scale.get_battery_percentage()
     units = scale.get_units()
