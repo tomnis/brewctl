@@ -31,16 +31,12 @@ def initialize_hardware() -> Tuple[Scale, Valve]:
 
 scale, valve = initialize_hardware()
 
-
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load the ML model
     if not scale.connected:
         scale.connect()
+    print("Startup complete, scale connected.")
     yield
-    # Clean up the ML models and release the resources
     print("Shutting down, disconnecting scale...")
     scale.disconnect()
     valve.release()
@@ -48,9 +44,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
 
 @app.get("/scale")
 def read_weight():
@@ -69,6 +62,11 @@ def refresh_scale_connection():
     scale.connect()
     return {"status": "scale connection refreshed"}  # Placeholder response
 
+
+
+
+
+#### VALVE ENDPOINTS ####
 class MatchBrewId(BaseModel):
     brew_id: str
     @validator('brew_id')
@@ -80,7 +78,6 @@ class MatchBrewId(BaseModel):
             raise ValueError('wrong brew_id')
         return v.title()
 
-#### VALVE ENDPOINTS ####
 @app.post("/valve/acquire")
 def acquire_valve(q: str | None = None):
     global cur_brew_id
