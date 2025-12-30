@@ -41,7 +41,9 @@ async def lifespan(app: FastAPI):
         scale.connect()
     yield
     # Clean up the ML models and release the resources
+    print("Shutting down, disconnecting scale...")
     scale.disconnect()
+    print("Shutting down, disconnected scale...")
 
 app = FastAPI(lifespan=lifespan)
 

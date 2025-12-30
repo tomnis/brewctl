@@ -1,6 +1,7 @@
 from pyacaia import AcaiaScale
 from pyacaia import *
 import pyacaia
+import time
 
 from scale import Scale
 
@@ -26,6 +27,7 @@ class LunarScale(Scale):
 
     def disconnect(self):
         self.scale.disconnect()
+        time.sleep(0.5)
 
 
     def get_weight(self) -> float:
