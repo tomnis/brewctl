@@ -1,7 +1,7 @@
 import time
 from config import *
 from MotorKitValve import MotorKitValve
-from src.InfluxDBTimeSeries import InfluxDBTimeSeries
+from InfluxDBTimeSeries import InfluxDBTimeSeries
 
 url = COLDBREW_INFLUXDB_URL
 org = COLDBREW_INFLUXDB_ORG
