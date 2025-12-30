@@ -1,23 +1,24 @@
+import requests
 import time
-from config import *
-from MotorKitValve import MotorKitValve
-from InfluxDBTimeSeries import InfluxDBTimeSeries
 
+from config import *
+from InfluxDBTimeSeries import InfluxDBTimeSeries
 from HttpValve import HttpValve
 
-url = COLDBREW_INFLUXDB_URL
-org = COLDBREW_INFLUXDB_ORG
-bucket = COLDBREW_INFLUXDB_BUCKET
-token = COLDBREW_INFLUXDB_TOKEN
-time_series = InfluxDBTimeSeries(url=url, token=token, org=org, bucket=bucket)
+brewer_url = COLDBREW_VALVE_URL
+
+influxdb_url = COLDBREW_INFLUXDB_URL
+influxdb_org = COLDBREW_INFLUXDB_ORG
+influxdb_bucket = COLDBREW_INFLUXDB_BUCKET
+influxdb_token = COLDBREW_INFLUXDB_TOKEN
+print(f"using influxdb bucket: {influxdb_bucket}")
+time_series = InfluxDBTimeSeries(url=influxdb_url, token=influxdb_token, org=influxdb_org, bucket=influxdb_bucket)
 
 target_flow_rate = 0.05
 epsilon = 0.008
 
 initial_weight = 0
 is_first_time = True
-
-valve = MotorKitValve(1)
 
 def get_current_weight():
     # TODO don't use global
@@ -38,18 +39,18 @@ def main():
     #interval = 0.5
     # target total weight, don't bother taring
     #target_weight = 100 #1137
-    target_weight = 1337
+    target_weight = 1137
 
     # sleep to let the initial saturation drain
     # TODO should add a param for this
     #time.sleep(120)
-
-    # TODO move starting weight here
+    # TODO should use a enter/exit here
 
     current_weight = 0
 
-    with HttpValve() as valve:
-        #while current_weight < target_weight:
+    #while current_weight < target_weight:
+    with HttpValve(brewer_url) as valve:
+        # TODO block until current flow rate decreases
         while True:
             # get the current flow rate
             print("====")
@@ -76,9 +77,11 @@ def main():
 
         # reached target weight, fully close the valve
         print(f"reached target weight")
-        valve.return_to_start()
+        #valve.return_to_start()
 
+        valve.release()
 
 
 if __name__ == "__main__":
     main()
+
