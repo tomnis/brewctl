@@ -12,3 +12,4 @@ setuptools==80.9.0
 six==1.17.0
 typing_extensions==4.15.0
 urllib3==2.5.0
+fastapi==0.128.0
