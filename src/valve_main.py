@@ -1,11 +1,7 @@
 import time
-from adafruit_motorkit import MotorKit
-from adafruit_motor import stepper
 from influxdb_client import InfluxDBClient, Point
-import os
-import math
-from statistics import mean
 from config import *
+from MotorKitValve import MotorKitValve
 
 org = COLDBREW_INFLUXDB_ORG
 bucket_name = COLDBREW_INFLUXDB_BUCKET
@@ -20,6 +16,7 @@ epsilon = 0.008
 initial_weight = 0
 is_first_time = True
 
+valve = MotorKitValve(1)
 
 def get_current_weight(influx_client, org):
     # TODO don't use global
@@ -64,25 +61,8 @@ def get_flow_rate(influx_client, org):
     return result.get_value()
 
 
-def flip_direction(direction):
-    if direction is stepper.FORWARD:
-        return stepper.BACKWARD
-    elif direction is stepper.BACKWARD:
-        return stepper.FORWARD
-    else:
-        raise RuntimeError(f"invalid direction {direction}")
-
-
-def directions_to_start(breadcrumbs):
-    # find which of the counts is larger, then return the reverse
-    max_direction = max(breadcrumbs, key=breadcrumbs.get)
-    opp = flip_direction(max_direction)
-    count = breadcrumbs[max_direction]
-    return (opp, count)
-
 def main():
     """The main function of the script."""
-    breadcrumbs = dict()
     interval = 60
     #interval = 0.5
     # target total weight, don't bother taring
@@ -115,32 +95,17 @@ def main():
             continue
         elif result <= target_flow_rate:
             print("too slow")
-            direction = stepper.FORWARD
+            valve.step_forward()
         else:
             print("too fast")
-            direction = stepper.BACKWARD
+            valve.step_backward()
 
-        # update breadcrumbs so we can get back to starting position
-        if direction not in breadcrumbs:
-            breadcrumbs[direction] = 0
-        breadcrumbs[direction] += 1
-
-        kit.stepper1.onestep(direction=direction)
-        # sleep
         time.sleep(interval)
-        #kit.stepper1.release()
-        #time.sleep()
         current_weight = get_current_weight(client, org)
-        #current_weight += 1
 
     # reached target weight, fully close the valve
-    print(f"reached target weight, breadcrumbs={breadcrumbs}")
-    (opp, count) = directions_to_start(breadcrumbs)
-
-    # rotate motor certain number of times
-    for i in range(count):
-        kit.stepper1.onestep(direction=opp)
-        time.sleep(0.1)
+    print(f"reached target weight")
+    valve.return_to_start()
 
 
 
