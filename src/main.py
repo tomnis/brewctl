@@ -15,6 +15,7 @@ min_steps = 1
 max_steps = 16
 cur_brew_id = None
 
+# TODO dependency injection
 def initialize_hardware() -> Tuple[Scale, Valve]:
     if COLDBREW_IS_PROD:
         from LunarScale import LunarScale
