@@ -8,7 +8,6 @@ bucket_name = COLDBREW_INFLUXDB_BUCKET
 token = COLDBREW_INFLUXDB_TOKEN
 client = InfluxDBClient(url=COLDBREW_INFLUXDB_URL, token=token, org=org, timeout=30_000)
 
-kit = MotorKit()
 target_flow_rate = 0.05
 epsilon = 0.008
 
