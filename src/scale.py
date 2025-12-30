@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 
 class Scale(ABC):
@@ -60,9 +59,11 @@ class MockScale(Scale):
         return self._connected
 
     def connect(self):
+        print("[Mock] Scale connected.")
         self._connected = True
 
     def disconnect(self):
+        print("[Mock] Scale disconnected.")
         self._connected = False
 
     def get_weight(self) -> float:

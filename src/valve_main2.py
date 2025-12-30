@@ -11,7 +11,7 @@ influxdb_url = COLDBREW_INFLUXDB_URL
 influxdb_org = COLDBREW_INFLUXDB_ORG
 influxdb_bucket = COLDBREW_INFLUXDB_BUCKET
 influxdb_token = COLDBREW_INFLUXDB_TOKEN
-print(influxdb_bucket)
+print(f"using influxdb bucket: {influxdb_bucket}")
 time_series = InfluxDBTimeSeries(url=influxdb_url, token=influxdb_token, org=influxdb_org, bucket=influxdb_bucket)
 
 target_flow_rate = 0.05
@@ -50,6 +50,7 @@ def main():
 
     #while current_weight < target_weight:
     with HttpValve(brewer_url) as valve:
+        # TODO block until current flow rate decreases
         while True:
             # get the current flow rate
             print("====")

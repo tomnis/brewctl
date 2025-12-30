@@ -20,6 +20,7 @@ class HttpValve(Valve):
         else:
             print(response.json())
             print("Failed to acquire valve")
+            raise RuntimeError("Failed to acquire valve")
 
     def release(self):
         """Release the valve for exclusive use."""

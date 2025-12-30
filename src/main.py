@@ -18,11 +18,13 @@ cur_brew_id = None
 # TODO dependency injection
 def initialize_hardware() -> Tuple[Scale, Valve]:
     if COLDBREW_IS_PROD:
+        print("Initializing production hardware...")
         from LunarScale import LunarScale
         from MotorKitValve import MotorKitValve
         s: Scale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
         v: Valve = MotorKitValve()
     else:
+        print("Initializing mock hardware...")
         from scale import MockScale
         from valve import MockValve
         s: Scale = MockScale()
@@ -34,13 +36,14 @@ scale, valve = initialize_hardware()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not scale.connected:
+        print("Connecting to scale...")
         scale.connect()
-    print("Startup complete, scale connected.")
+    print("server startup complete")
     yield
-    print("Shutting down, disconnecting scale...")
     scale.disconnect()
-    valve.release()
     print("Shutting down, disconnected scale...")
+    valve.release()
+    print("Shutting down, released valve ...")
 
 app = FastAPI(lifespan=lifespan)
 
