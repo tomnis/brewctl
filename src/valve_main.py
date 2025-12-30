@@ -53,7 +53,7 @@ def get_flow_rate(influx_client, org):
 
     #results = [x.get_value() for x in tables[-1].records[-3:]]
     #results = [x for x in results if x is not None]
-    result = tables[-1].records[-1]
+    result = tables[-1].records[-2]
     #print(result)
 
     #return mean(results)

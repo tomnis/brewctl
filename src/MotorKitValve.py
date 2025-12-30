@@ -5,10 +5,10 @@ from valve import Valve
 
 class MotorKitValve(Valve):
     def __init__(self, motor_number: int=1):
-        self.kit = MotorKit()
         # keep track of which direction we've moved in and how many steps
         self.breadcrumbs = dict()
 
+        self.kit = MotorKit()
         if motor_number == 1:
             self.motor = self.kit.stepper1
         elif motor_number == 2:
@@ -46,7 +46,7 @@ class MotorKitValve(Valve):
             self.breadcrumbs[direction] = 0
         self.breadcrumbs[direction] += 1
 
-        self.motor.onestep(direction)
+        self.motor.onestep(direction=direction)
 
 
     def return_to_start(self):
