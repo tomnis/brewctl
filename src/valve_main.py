@@ -22,7 +22,7 @@ def get_current_weight():
     global initial_weight
     global is_first_time
 
-    result = time_series.get_current_flow_rate()
+    result = time_series.get_current_weight()
     # track our starting weight to derive a delta of when we should stop
     if is_first_time:
         is_first_time = False
@@ -67,8 +67,8 @@ def main():
             print("too fast")
             valve.step_backward()
 
-        time.sleep(interval)
         current_weight = get_current_weight()
+        time.sleep(interval)
 
     # reached target weight, fully close the valve
     print(f"reached target weight")

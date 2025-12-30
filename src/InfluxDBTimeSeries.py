@@ -38,6 +38,8 @@ class InfluxDBTimeSeries(TimeSeries):
             for record in table.records:
                 print(f"Time: {record.get_time()}, Value: {record.get_value()}")
 
-        result = tables[-1].records[-2]
+        # TODO it does actually seem better to take the last value here
+        # even though its noisy and not necessarily representative of the full period
+        result = tables[-1].records[-1]
         # TODO consider calculating the mean here
         return result.get_value()
