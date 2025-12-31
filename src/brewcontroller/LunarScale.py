@@ -1,4 +1,4 @@
-from ..base.scale import Scale
+from ..base.scale import AbstractScale
 
 from pyacaia import AcaiaScale
 from pyacaia import *
@@ -6,7 +6,7 @@ from pyacaia import *
 import pyacaia
 import time
 
-class LunarScale(Scale):
+class LunarScale(AbstractScale):
 
     def __init__(self, mac_address: str):
         self.mac_address: str = mac_address

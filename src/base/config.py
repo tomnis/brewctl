@@ -8,3 +8,6 @@ COLDBREW_INFLUXDB_ORG = os.environ['COLDBREW_INFLUXDB_ORG']
 
 # if this is ever changed, need to also change grafana dashboard queries
 COLDBREW_INFLUXDB_BUCKET = os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') if COLDBREW_IS_PROD else os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') + '-dev'
+
+FORWARD = 1
+BACKWARD = 2

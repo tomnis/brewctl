@@ -7,8 +7,8 @@ from pydantic import BaseModel, validator
 from typing import Tuple, Annotated
 
 from ..base.config import *
-from ..base.scale import Scale
-from ..base.valve import Valve
+from ..base.scale import AbstractScale
+from ..base.valve import AbstractValve
 
 min_steps = 1
 max_steps = 16
@@ -16,27 +16,27 @@ cur_brew_id = None
 
 # TODO dependency injection
 
-def initialize_scale() -> Scale:
+def initialize_scale() -> AbstractScale:
     if COLDBREW_IS_PROD:
         print("Initializing production scale...")
         from ..brewcontroller.LunarScale import LunarScale
-        s: Scale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
+        s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
     else:
         print("Initializing mock scale...")
         from ..base.scale import MockScale
-        s: Scale = MockScale()
+        s: AbstractScale = MockScale()
     return s
 
 
-def initialize_valve() -> Valve:
+def initialize_valve() -> AbstractValve:
     if COLDBREW_IS_PROD:
         print("Initializing production valve...")
         from ..brewcontroller.MotorKitValve import MotorKitValve
-        v: Valve = MotorKitValve()
+        v: AbstractValve = MotorKitValve()
     else:
         print("Initializing mock valve...")
         from ..base.valve import MockValve
-        v: Valve= MockValve()
+        v: AbstractValve= MockValve()
     return v
 
 scale = initialize_scale()

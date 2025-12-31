@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class Scale(ABC):
+class AbstractScale(ABC):
 
     @property
     @abstractmethod
@@ -44,7 +44,7 @@ class Scale(ABC):
         pass
 
 
-class MockScale(Scale):
+class MockScale(AbstractScale):
     """A mock implementation of the Scale class for testing purposes."""
 
     def __init__(self):

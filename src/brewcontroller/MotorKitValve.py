@@ -1,9 +1,9 @@
 from adafruit_motorkit import MotorKit
 from adafruit_motor import stepper
-from ..base.valve import Valve
+from ..base.valve import AbstractValve
 
 
-class MotorKitValve(Valve):
+class MotorKitValve(AbstractValve):
     def __init__(self, motor_number: int=1):
         # keep track of which direction we've moved in and how many steps
         self.breadcrumbs = dict()

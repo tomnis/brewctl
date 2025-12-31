@@ -2,10 +2,8 @@ import time
 
 from brewclient.config import *
 from base.config import *
-from brewclient.InfluxDBTimeSeries import InfluxDBTimeSeries
-from brewclient.HttpValve import HttpValve
-
-brewer_url = COLDBREW_VALVE_URL
+from InfluxDBTimeSeries import InfluxDBTimeSeries
+from HttpValve import HttpValve
 
 influxdb_url = COLDBREW_INFLUXDB_URL
 influxdb_org = COLDBREW_INFLUXDB_ORG
@@ -13,9 +11,6 @@ influxdb_bucket = COLDBREW_INFLUXDB_BUCKET
 influxdb_token = COLDBREW_INFLUXDB_TOKEN
 print(f"using influxdb bucket: {influxdb_bucket}")
 time_series = InfluxDBTimeSeries(url=influxdb_url, token=influxdb_token, org=influxdb_org, bucket=influxdb_bucket)
-
-target_flow_rate = 0.05
-epsilon = 0.008
 
 initial_weight = 0
 is_first_time = True
@@ -49,7 +44,7 @@ def main():
     current_weight = 0
 
     #while current_weight < target_weight:
-    with HttpValve(brewer_url) as valve:
+    with HttpValve(COLDBREW_VALVE_URL) as valve:
         # TODO block until current flow rate decreases
         while True:
             # get the current flow rate
@@ -61,11 +56,12 @@ def main():
                 time.sleep(interval)
                 continue
 
-            elif abs(target_flow_rate - current_flow_rate) <= epsilon:
+            elif abs(COLDBREW_TARGET_FLOW_RATE - current_flow_rate) <= COLDBREW_EPSILON:
                 print("just right")
                 time.sleep(interval * 2)
                 continue
-            elif current_flow_rate <= target_flow_rate:
+            # TODO should consider microadjustments here
+            elif current_flow_rate <= COLDBREW_TARGET_FLOW_RATE:
                 print("too slow")
                 valve.step_forward()
             else:
@@ -78,6 +74,7 @@ def main():
 
         # reached target weight, fully close the valve
         print(f"reached target weight")
+        # TODO investigate this further, not enough torque?
         #valve.return_to_start()
 
         valve.release()

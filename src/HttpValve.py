@@ -1,8 +1,8 @@
 
-from base.valve import Valve
+from base.valve import AbstractValve
 import requests
 
-class HttpValve(Valve):
+class HttpValve(AbstractValve):
 
     def __init__(self, brewer_url: str):
         self.brewer_url = brewer_url
@@ -49,9 +49,6 @@ class HttpValve(Valve):
             print(response)
             print(response.json())
             print("Failed to step valve backward")
-
-    def return_to_start(self):
-        pass
 
     def __enter__(self):
         # Initialize any resources if needed
