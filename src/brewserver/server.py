@@ -143,7 +143,9 @@ async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
     global scale
 
     old_id = cur_brew_id
-    valve.return_to_start()
+    # TODO probably don't want to do this here, could cause some kind of conflict
+    # edge case with teardown before anything has happened
+    #valve.return_to_start()
     time.sleep(1)
     valve.release()
 
