@@ -1,6 +1,6 @@
 from adafruit_motorkit import MotorKit
 from adafruit_motor import stepper
-from valve import Valve
+from ..base.valve import Valve
 
 
 class MotorKitValve(Valve):

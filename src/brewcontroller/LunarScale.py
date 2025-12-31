@@ -3,7 +3,7 @@ from pyacaia import *
 import pyacaia
 import time
 
-from scale import Scale
+from ..base.scale import Scale
 
 
 class LunarScale(Scale):

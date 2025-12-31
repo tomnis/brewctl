@@ -1,15 +1,14 @@
 import uuid
 import time
+
 from contextlib import asynccontextmanager
-
-from pydantic import BaseModel, Field, validator
-
-from config import *
 from fastapi import FastAPI, Query, Path
-from typing import Union, Tuple, Annotated, Literal
+from pydantic import BaseModel, validator
+from typing import Tuple, Annotated
 
-from scale import Scale
-from valve import Valve
+from ..base.config import *
+from ..base.scale import Scale
+from ..base.valve import Valve
 
 min_steps = 1
 max_steps = 16
@@ -25,8 +24,8 @@ def initialize_hardware() -> Tuple[Scale, Valve]:
         v: Valve = MotorKitValve()
     else:
         print("Initializing mock hardware...")
-        from scale import MockScale
-        from valve import MockValve
+        from ..base.scale import MockScale
+        from ..base.valve import MockValve
         s: Scale = MockScale()
         v: Valve= MockValve()
     return s, v

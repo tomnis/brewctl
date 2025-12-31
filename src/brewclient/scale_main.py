@@ -1,6 +1,6 @@
 import time
 
-from config import *
+from ..base.config import *
 import requests
 
 from influxdb_client import InfluxDBClient, Point
@@ -38,6 +38,7 @@ def write_scale_data(weight: float, battery_pct: int):
     write_api.write(bucket=bucket_name, record=p)
 
 
+# TODO seems like this could be called as part of the brew acquisition process instead
 def main():
     ensure_bucket_exists()
 

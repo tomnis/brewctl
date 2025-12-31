@@ -1,5 +1,5 @@
 
-from valve import Valve
+from ..base.valve import Valve
 import requests
 
 class HttpValve(Valve):

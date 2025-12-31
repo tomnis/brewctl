@@ -1,7 +1,7 @@
 import requests
 import time
 
-from config import *
+from ..base.config import *
 from InfluxDBTimeSeries import InfluxDBTimeSeries
 from HttpValve import HttpValve
 
@@ -72,6 +72,7 @@ def main():
                 print("too fast")
                 valve.step_backward()
 
+            # TODO can just check the weight from the scale here
             current_weight = get_current_weight()
             time.sleep(interval)
 
