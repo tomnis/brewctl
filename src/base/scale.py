@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 
-
 class AbstractScale(ABC):
     """
     An abstract base class representing a scale.

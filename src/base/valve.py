@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 
-
 class AbstractValve(ABC):
 
     @abstractmethod
