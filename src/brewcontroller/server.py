@@ -60,6 +60,9 @@ def read_weight():
 # tests:
 # - scale is turned off during brew, then turned back on, should be able to reconnect
 # - server process restarts due to crash or update, should be able to reconnect
+# restarting the server won't work, we do need to handle gracefully
+# - disconnect
+# TODO i guess just to be safe we need to powercycle the scale
 @app.post("/scale/refresh")
 def refresh_scale_connection():
     if scale.connected:
