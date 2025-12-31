@@ -15,22 +15,32 @@ max_steps = 16
 cur_brew_id = None
 
 # TODO dependency injection
-def initialize_hardware() -> Tuple[Scale, Valve]:
+
+def initialize_scale() -> Scale:
     if COLDBREW_IS_PROD:
-        print("Initializing production hardware...")
+        print("Initializing production scale...")
         from ..brewcontroller.LunarScale import LunarScale
-        from ..brewcontroller.MotorKitValve import MotorKitValve
         s: Scale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
+    else:
+        print("Initializing mock scale...")
+        from ..base.scale import MockScale
+        s: Scale = MockScale()
+    return s
+
+
+def initialize_valve() -> Valve:
+    if COLDBREW_IS_PROD:
+        print("Initializing production valve...")
+        from ..brewcontroller.MotorKitValve import MotorKitValve
         v: Valve = MotorKitValve()
     else:
-        print("Initializing mock hardware...")
-        from ..base.scale import MockScale
+        print("Initializing mock valve...")
         from ..base.valve import MockValve
-        s: Scale = MockScale()
         v: Valve= MockValve()
-    return s, v
+    return v
 
-scale, valve = initialize_hardware()
+scale = initialize_scale()
+valve = initialize_valve()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,8 +56,9 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/scale")
 def read_weight():
-    # TODO we should attempt to reconnct here if not connected
+    global scale
     if not scale.connected:
+        scale = initialize_scale()
         scale.connect()
     weight = scale.get_weight()
     battery_pct = scale.get_battery_percentage()
@@ -63,6 +74,7 @@ def read_weight():
 # restarting the server won't work, we do need to handle gracefully
 # - disconnect
 # TODO i guess just to be safe we need to powercycle the scale
+# we should be able to power cycle the scale and have the server reconnect
 @app.post("/scale/refresh")
 def refresh_scale_connection():
     if scale.connected:
