@@ -1,9 +1,9 @@
 import requests
 import time
 
-from ..base.config import *
-from InfluxDBTimeSeries import InfluxDBTimeSeries
-from HttpValve import HttpValve
+from base.config import *
+from brewclient.InfluxDBTimeSeries import InfluxDBTimeSeries
+from brewclient.HttpValve import HttpValve
 
 brewer_url = COLDBREW_VALVE_URL
 

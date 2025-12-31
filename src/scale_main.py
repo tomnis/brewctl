@@ -1,6 +1,6 @@
 import time
 
-from ..base.config import *
+from base.config import *
 import requests
 
 from influxdb_client import InfluxDBClient, Point
