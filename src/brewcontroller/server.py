@@ -57,6 +57,9 @@ def read_weight():
 
 # TODO doesn't seem like this works when reconnecting
 # TODO investigate calling scale.disconnect then scale.connect in sequence
+# tests:
+# - scale is turned off during brew, then turned back on, should be able to reconnect
+# - server process restarts due to crash or update, should be able to reconnect
 @app.post("/scale/refresh")
 def refresh_scale_connection():
     if scale.connected:

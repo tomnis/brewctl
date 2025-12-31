@@ -8,7 +8,3 @@ COLDBREW_INFLUXDB_ORG = os.environ['COLDBREW_INFLUXDB_ORG']
 
 # if this is ever changed, need to also change grafana dashboard queries
 COLDBREW_INFLUXDB_BUCKET = os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') if COLDBREW_IS_PROD else os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') + '-dev'
-
-
-# TODO probably want a better name for this
-COLDBREW_VALVE_URL = os.environ.get('COLDBREW_VALVE_URL', 'http://localhost:8000')
