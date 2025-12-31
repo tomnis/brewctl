@@ -168,13 +168,13 @@ def read_flow_rate():
     return {"brew_id": cur_brew_id, "flow_rate": flow_rate}
 
 
-@app.post("/brew/valve/forward/{num_steps}")
+@app.post("/brew/valve/forward")
 def step_forward(brew_id: Annotated[MatchBrewId, Query()],):
     valve.step_forward()
     time.sleep(0.1)
     return {"status": f"stepped forward one step"}
 
-@app.post("/brew/valve/backward/{num_steps}")
+@app.post("/brew/valve/backward")
 def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
     valve.step_backward()
     time.sleep(0.1)

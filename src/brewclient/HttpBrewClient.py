@@ -46,7 +46,7 @@ class HttpBrewClient(AbstractBrewClient):
 
     def step_forward(self):
         """Move the valve controller one step forward."""
-        response = requests.post(f"{self.brewer_url}/brew/valve/forward/1", params={"brew_id": self._brew_id})
+        response = requests.post(f"{self.brewer_url}/brew/valve/forward", params={"brew_id": self._brew_id})
         if response.status_code == 200:
             print("Stepped valve forward")
         else:
@@ -56,7 +56,7 @@ class HttpBrewClient(AbstractBrewClient):
 
     def step_backward(self):
         """Move the valve controller one step backward."""
-        response = requests.post(f"{self.brewer_url}/brew/valve/backward/1", params={"brew_id": self._brew_id})
+        response = requests.post(f"{self.brewer_url}/brew/valve/backward", params={"brew_id": self._brew_id})
         if response.status_code == 200:
             print("Stepped valve backward")
         else:
@@ -68,10 +68,10 @@ class HttpBrewClient(AbstractBrewClient):
         pass
 
     def __enter__(self):
-        # Initialize any resources if needed
+        """Context manager entry: acquire the brew, involves a request to create acquire new brew_id."""
         self.acquire()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # Clean up resources if needed
+        """Context manager exit: release the brew."""
         self.release()
