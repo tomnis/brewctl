@@ -46,6 +46,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/scale")
 def read_weight():
+    # TODO we should attempt to reconnct here if not connected
     if not scale.connected:
         scale.connect()
     weight = scale.get_weight()
