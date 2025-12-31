@@ -55,6 +55,7 @@ def read_weight():
     return {"weight": weight, "battery_pct": battery_pct, "units": units}  # Placeholder value in grams
 
 
+# TODO doesn't seem like this works when reconnecting
 @app.post("/scale/refresh")
 def refresh_scale_connection():
     scale.disconnect()

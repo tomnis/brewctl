@@ -1,5 +1,5 @@
 from influxdb_client import InfluxDBClient, Point
-from ..base.time_series import TimeSeries
+from base.time_series import TimeSeries
 
 class InfluxDBTimeSeries(TimeSeries):
 
