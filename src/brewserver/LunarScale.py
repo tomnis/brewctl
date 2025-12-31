@@ -14,7 +14,7 @@ class LunarScale(AbstractScale):
 
     def __init__(self, mac_address: str):
         self.mac_address: str = mac_address
-        self.scale: AcaiaScale = None
+        self.scale: AcaiaScale = AcaiaScale(mac=self.mac_address)
 
     @property
     def connected(self) -> bool:
