@@ -4,7 +4,7 @@ class AbstractValve(ABC):
 
     @abstractmethod
     def release(self):
-        """Release the valve."""
+        """Release the valve (underlying motor is now allowed to spin freely)."""
         pass
 
     @abstractmethod
