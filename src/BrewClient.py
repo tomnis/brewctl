@@ -1,7 +1,5 @@
-
 from base.valve import AbstractValve
 import requests
-
 
 
 class BrewClient(AbstractValve):

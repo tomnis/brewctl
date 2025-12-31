@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import uuid
 import time
 
@@ -12,7 +11,7 @@ from ..base.config import *
 from ..base.scale import AbstractScale
 from ..base.valve import AbstractValve
 from ..base.time_series import AbstractTimeSeries
-from ..base.InfluxDBTimeSeries import InfluxDBTimeSeries
+from src.brewcontroller.InfluxDBTimeSeries import InfluxDBTimeSeries
 from config import *
 
 min_steps = COLDBREW_VALVE_MIN_STEPS

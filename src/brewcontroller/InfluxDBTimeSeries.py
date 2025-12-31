@@ -6,6 +6,8 @@ from retry import retry
 
 # TODO might want to split this out further,
 # brewclient doesn't need to write data, only read it
+# doesn't seem like a good idea to split this into read and write abstract classes
+# what about providing a bucket name as a parameter?
 class InfluxDBTimeSeries(AbstractTimeSeries):
 
     def __init__(self, url, token, org, bucket, timeout=30_000):
