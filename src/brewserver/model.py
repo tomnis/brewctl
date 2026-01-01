@@ -24,11 +24,15 @@ class StartBrewRequest(BaseModel):
     scale_interval: float = COLDBREW_SCALE_READ_INTERVAL
     valve_interval: float = COLDBREW_VALVE_INTERVAL_SECONDS
     epsilon: float = COLDBREW_EPSILON
-    # strategy: str
+    # TODO strategy: str
+
+# TODO add startbrewresponse
 
 
+# TODO rename to just brew status
 class BrewStatusRecord(BaseModel):
     brew_id: str
     timestamp: datetime
     current_flow_rate: float
     current_weight: float
+    # TODO add ETA, time started

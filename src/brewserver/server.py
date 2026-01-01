@@ -4,7 +4,6 @@ import time
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, HTTPException, status
-from fastapi.testclient import TestClient
 from pydantic import validator
 from typing import Annotated
 
@@ -78,12 +77,20 @@ async def lifespan(app: FastAPI):
     print("Shutting down, released valve ...")
 
 
+"""
+Main place for pi-side logic. Webserver handles incoming requests acting as a "proxy" of sorts for both the scale and valve.
+Prefer to use start/end endpoints as those are the simplest.
+Acquire/release endpoints can be used for clients to implement their own fine-grained brewing logic.
+
+Kill endpoints are also provided to forcefully kill an in-progress brew. 
+"""
 app = FastAPI(lifespan=lifespan)
 
 
-
-# TODO move this return type to a class or pydantic model
 def get_scale_status() -> ScaleStatus:
+    """
+    Reads status from the scale. Used for both a specific endpoint, and polling+writing scale data as part of the event loop.
+    """
     # good enough to support reconnection here. we can just powercycle the scale if anything goes wrong to get back on track
     global scale
     if scale is None or not scale.connected:
@@ -103,12 +110,14 @@ def read_scale():
     return get_scale_status()
 
 
-#### VALVE ENDPOINTS ####
+#### BREW ENDPOINTS ####
 class MatchBrewId(BaseModel):
+    """ Middleware to match brew_id. Used to restrict execution to matching id pairs."""
     brew_id: str
     @validator('brew_id')
     def brew_id_must_match(cls, v):
-        print(f"cur brew id: {cur_brew_id}")
+        global cur_brew_id
+        # print(f"cur brew id: {cur_brew_id}")
         if cur_brew_id is None:
             raise ValueError('no brew_id in progress')
         elif v != cur_brew_id:
@@ -136,7 +145,6 @@ async def brew_step_task(brew_id, strategy):
     """brew"""
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
-        # TODO implement valve data collection
         # get the current flow rate
         current_flow_rate = time_series.get_current_flow_rate()
         (valve_command, interval) = strategy.step(current_flow_rate)
@@ -148,10 +156,9 @@ async def brew_step_task(brew_id, strategy):
 
 
 
-# TODO should have an endpoint to get the brew status
 @app.post("/brew/start")
 async def start_brew(req: StartBrewRequest | None = None):
-    print(f"brew start request: {req}")
+    # print(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
     global cur_brew_id
     if cur_brew_id is None:
@@ -162,22 +169,24 @@ async def start_brew(req: StartBrewRequest | None = None):
         else:
             strategy = DefaultBrewStrategy.from_request(req)
 
-        print(f"strategy: {str(strategy)}")
+        # print(f"strategy: {str(strategy)}")
 
         # start scale read and brew tasks
         asyncio.create_task(collect_scale_data_task(cur_brew_id, COLDBREW_SCALE_READ_INTERVAL))
         asyncio.create_task(brew_step_task(new_id, strategy))
-        return {"status": "started", "brew_id": cur_brew_id}  # Placeholder response
+        return {"status": "started", "brew_id": cur_brew_id}
     else:
         raise HTTPException(status_code=409, detail="brew already in progress")
 
 @app.post("/brew/stop")
 async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
+    """Politely stops the given brew."""
     return await release_brew(brew_id)
 
 
 @app.get("/brew/status")
 async def brew_status():
+    """Gets the current brew status."""
     global cur_brew_id
     brew_id = cur_brew_id
     if brew_id is None:
@@ -192,8 +201,7 @@ async def brew_status():
 
 
 
-
-# use acquire/release semantics to start scale data collection but expected to manage brew logic locally
+# use acquire/release semantics to start scale data collection but expected to manage brew logic clientside
 @app.post("/brew/acquire")
 async def acquire_brew():
     """Acquire the brew valve for exclusive use."""
@@ -264,8 +272,7 @@ def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
     return {"status": f"stepped backward 1 step"}
 
 
-# TODO it would be nice to auto run tests here
 if not COLDBREW_IS_PROD:
-    print("running some tests")
+    print("running some tests...")
     import pytest
-    exit_code = pytest.main(["-v", "src"])
+    exit_code = pytest.main(["--disable-warnings", "-v", "src"])
