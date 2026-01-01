@@ -7,17 +7,34 @@ from fastapi import FastAPI, Query, HTTPException, status
 from pydantic import validator
 from typing import Annotated
 
-from config import *
+# from config import *
 from scale import AbstractScale
 from brew_strategy import DefaultBrewStrategy
 from model import *
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
+import logging
+
+from datetime import datetime, timezone
 
 cur_brew_id = None
 
-from datetime import datetime, timezone
+# basic config needs to be called first
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+#     datefmt="%Y-%m-%d %H:%M:%S",
+# )
+
+# TODO logs don't show up like this
+logger = logging.getLogger("uvicorn")
+logger.propagate = False
+# logger = logging.getLogger(__name__)
+logger.__format__("")
+logger.info("abcdef")
+
+
 
 
 def create_scale() -> AbstractScale:
@@ -26,7 +43,7 @@ def create_scale() -> AbstractScale:
         from pi.LunarScale import LunarScale
         s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
     else:
-        print("Initializing mock scale...")
+        logger.info("Initializing mock scale...")
         from scale import MockScale
         s: AbstractScale = MockScale()
     return s
@@ -38,15 +55,14 @@ def create_valve() -> AbstractValve:
         from pi.MotorKitValve import MotorKitValve
         v: AbstractValve = MotorKitValve()
     else:
-        print("Initializing mock valve...")
+        logger.info("Initializing mock valve...")
         from valve import MockValve
         v: AbstractValve = MockValve()
     return v
 
 
 def create_time_series() -> InfluxDBTimeSeries:
-    print("Initializing InfluxDB time series...")
-    # print(f"org = {COLDBREW_INFLUXDB_ORG}")
+    logger.info("Initializing InfluxDB time series...")
 
     ts: AbstractTimeSeries = InfluxDBTimeSeries(
         url=COLDBREW_INFLUXDB_URL,
@@ -68,7 +84,8 @@ async def lifespan(app: FastAPI):
     Try our best to manage the scale connection, but restart is finicky
     We don't need to eagerly connect to the scale here, just make sure we disconnect on shutdown
     """
-    print("server startup complete")
+    # TODO good place to configure logger?
+    logger.info("server startup complete")
     yield
     if scale is not None:
         scale.disconnect()
@@ -273,6 +290,6 @@ def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
 
 
 if not COLDBREW_IS_PROD:
-    print("running some tests...")
+    logger.info("running some tests...")
     import pytest
     exit_code = pytest.main(["--disable-warnings", "-v", "src"])

@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
+node_modules/
 .DS_Store
 bin/
 pyvenv.cfg
