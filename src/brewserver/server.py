@@ -10,12 +10,18 @@ from typing import Annotated
 from config import *
 from scale import AbstractScale
 from brew_strat import DefaultBrewStrategy, ValveCommand
+from src.brewserver.model import StartBrewRequest
+from model import *
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
 from config import *
 
 cur_brew_id = None
+
+from datetime import datetime, timezone
+
+# Get current date and time in UTC as a timezone-aware object
 
 # TODO dependency injection
 def create_scale() -> AbstractScale:
@@ -44,6 +50,8 @@ def create_valve() -> AbstractValve:
 
 def create_time_series() -> AbstractTimeSeries:
     print("Initializing InfluxDB time series...")
+    print(f"org = {COLDBREW_INFLUXDB_ORG}")
+
     ts: AbstractTimeSeries = InfluxDBTimeSeries(
         url=COLDBREW_INFLUXDB_URL,
         token=COLDBREW_INFLUXDB_TOKEN,
@@ -114,7 +122,7 @@ async def collect_scale_data_task(brew_id, s):
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
         scale_state = get_scale_status()
-        # print(f"Scale state: {scale_state}")
+        print(f"Scale state: {scale_state}")
         weight = scale_state.get("weight")
         battery_pct = scale_state.get("battery_pct")
         if weight is not None and battery_pct is not None:
@@ -143,14 +151,21 @@ async def brew_step_task(brew_id, strategy):
 
 # TODO should have an endpoint to get the brew status
 @app.post("/brew/start")
-async def start_brew():
+async def start_brew(req: StartBrewRequest | None = None):
+    print(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
     global cur_brew_id
     if cur_brew_id is None:
         new_id = str(uuid.uuid4())
         cur_brew_id = new_id
-        # start a scale thread
-        strategy = DefaultBrewStrategy()
+        if req is None:
+            strategy = DefaultBrewStrategy()
+        else:
+            strategy = DefaultBrewStrategy.from_request(req)
+
+        print(f"strategy: {str(strategy)}")
+
+        # start scale read and brew tasks
         asyncio.create_task(collect_scale_data_task(cur_brew_id, COLDBREW_SCALE_READ_INTERVAL))
         asyncio.create_task(brew_step_task(new_id, strategy))
         return {"status": "brew started", "brew_id": cur_brew_id}  # Placeholder response
@@ -166,10 +181,14 @@ async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
 async def brew_status():
     global cur_brew_id
     brew_id = cur_brew_id
-    if cur_brew_id is None:
+    if brew_id is None:
         return {"status": "no brew in progress"}
     else:
-        return {"status": "brew started", "brew_id": brew_id}
+        timestamp = datetime.now(timezone.utc)
+        current_flow_rate = time_series.get_current_flow_rate()
+        current_weight = scale.get_weight()
+        res = BrewStatusRecord(brew_id=brew_id, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
+        return res
 
 
 

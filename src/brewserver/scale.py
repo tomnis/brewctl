@@ -26,7 +26,7 @@ class AbstractScale(ABC):
 
     @abstractmethod
     def get_weight(self) -> float:
-        """Get the weight in grams from the scale."""
+        """Get the current weight in grams from the scale."""
         pass
 
     @abstractmethod
