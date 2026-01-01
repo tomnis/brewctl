@@ -11,7 +11,7 @@ from config import *
 from scale import AbstractScale
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
-from InfluxDBTimeSeries import InfluxDBTimeSeries
+from time_series import InfluxDBTimeSeries
 from config import *
 
 cur_brew_id = None
@@ -20,7 +20,7 @@ cur_brew_id = None
 def create_scale() -> AbstractScale:
     if COLDBREW_IS_PROD:
         print("Initializing production scale...")
-        from LunarScale import LunarScale
+        from pi.LunarScale import LunarScale
         s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
     else:
         print("Initializing mock scale...")
@@ -32,12 +32,12 @@ def create_scale() -> AbstractScale:
 def create_valve() -> AbstractValve:
     if COLDBREW_IS_PROD:
         print("Initializing production valve...")
-        from MotorKitValve import MotorKitValve
+        from pi.MotorKitValve import MotorKitValve
         v: AbstractValve = MotorKitValve()
     else:
         print("Initializing mock valve...")
         from valve import MockValve
-        v: AbstractValve= MockValve()
+        v: AbstractValve = MockValve()
     return v
 
 
