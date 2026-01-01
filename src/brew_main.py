@@ -1,6 +1,6 @@
 from appserver.config import *
 from appserver.brew_client import HttpBrewClient
-from brewserver.brew_strat import DefaultBrewStrategy
+from brewserver.brew_strategy import DefaultBrewStrategy
 
 def main():
     """The main function of the script."""

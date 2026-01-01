@@ -11,6 +11,12 @@ class ValveCommand(Enum):
     BACKWARD = 2
 
 
+class ScaleStatus(BaseModel):
+    connected: bool
+    weight: float
+    units: str
+    battery_pct: int
+
 @dataclass
 class StartBrewRequest(BaseModel):
     target_flow_rate: float = COLDBREW_TARGET_FLOW_RATE

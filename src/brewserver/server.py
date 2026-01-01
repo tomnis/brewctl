@@ -4,18 +4,16 @@ import time
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
-from influxdb_client import InfluxDBClient
 from pydantic import validator
 from typing import Annotated
 
 from config import *
 from scale import AbstractScale
-from brew_strat import DefaultBrewStrategy
+from brew_strategy import DefaultBrewStrategy
 from model import *
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
-from config import *
 
 cur_brew_id = None
 
@@ -48,7 +46,7 @@ def create_valve() -> AbstractValve:
     return v
 
 
-def create_time_series() -> InfluxDBClient:
+def create_time_series() -> InfluxDBTimeSeries:
     print("Initializing InfluxDB time series...")
     print(f"org = {COLDBREW_INFLUXDB_ORG}")
 
@@ -80,11 +78,13 @@ async def lifespan(app: FastAPI):
     valve.release()
     print("Shutting down, released valve ...")
 
+
 app = FastAPI(lifespan=lifespan)
 
 
+
 # TODO move this return type to a class or pydantic model
-def get_scale_status() -> dict:
+def get_scale_status() -> ScaleStatus:
     # good enough to support reconnection here. we can just powercycle the scale if anything goes wrong to get back on track
     global scale
     if scale is None or not scale.connected:
@@ -95,9 +95,9 @@ def get_scale_status() -> dict:
         weight = scale.get_weight()
         battery_pct = scale.get_battery_percentage()
         units = scale.get_units()
-        return {"scale.connected": True, "weight": weight, "battery_pct": battery_pct, "units": units}
+        return ScaleStatus(connected=True, weight=weight, units=units, battery_pct=battery_pct)
     else:
-        return {"scale.connected": False}
+        return ScaleStatus(connected=False, weight=None, units=None, battery_pct=None)
 
 @app.get("/scale")
 def read_scale():
@@ -122,11 +122,11 @@ async def collect_scale_data_task(brew_id, s):
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
         scale_state = get_scale_status()
-        print(f"Scale state: {scale_state}")
-        weight = scale_state.get("weight")
-        battery_pct = scale_state.get("battery_pct")
+        # print(f"Scale state: {scale_state}")
+        weight = scale_state.weight
+        battery_pct = scale_state.battery_pct
         if weight is not None and battery_pct is not None:
-            print(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
+            # print(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
             # TODO could add a brew_id label here
             time_series.write_scale_data(weight, battery_pct)
         await asyncio.sleep(s)
@@ -167,7 +167,7 @@ async def start_brew(req: StartBrewRequest | None = None):
 
         # start scale read and brew tasks
         asyncio.create_task(collect_scale_data_task(cur_brew_id, COLDBREW_SCALE_READ_INTERVAL))
-        # asyncio.create_task(brew_step_task(new_id, strategy))
+        asyncio.create_task(brew_step_task(new_id, strategy))
         return {"status": "brew started", "brew_id": cur_brew_id}  # Placeholder response
     else:
         return {"status": "brew already in progress"}  # Placeholder response
