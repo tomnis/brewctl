@@ -7,6 +7,10 @@ from brewserver.model import ValveCommand
 class AbstractBrewClient(ABC):
     """An abstract base class representing a brew client.
     Defines the interface for brew client implementations.
+
+    A brew client can be used in a resource-semantic way since we defined enter() and exit() methods.
+    A brew client can be used with low-level operations, or can use the entire end to end do_brew() method.
+    A brew client has a brew strategy that describes what the brew behavior should be for a single iteration of the loop.
     """
 
     def __init__(self, brew_strategy: AbstractBrewStrategy):
@@ -42,7 +46,17 @@ class AbstractBrewClient(ABC):
         """Return the valve to the starting position."""
         pass
 
+    def __enter__(self):
+        """Context manager entry: acquire the brew, involves a request to create acquire new brew_id."""
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit: release the brew."""
+        self.release()
+
     def do_brew(self):
+        """High-level full end-to-end brew cycle"""
         while True:
             current_flow_rate = self.get_current_flow_rate()
             (valve_command, interval) = self.brew_strategy.step(current_flow_rate)
@@ -83,19 +97,19 @@ class HttpBrewClient(AbstractBrewClient):
         response = requests.post(f"{self.brewer_url}/brew/acquire")
         if response.status_code == 200:
             brew_id = response.json().get("brew_id")
-            print(response.json())
+            # print(response.json())
             self._brew_id = brew_id
             return brew_id
         else:
             print(response.json())
-            print("Failed to acquire valve")
+            print(f"Failed to acquire valve: {response.json()}")
             raise RuntimeError("Failed to acquire valve")
 
     def release(self):
         """Release the valve (finish a brew) for exclusive use."""
         response = requests.post(f"{self.brewer_url}/brew/release", params={"brew_id": self._brew_id})
         if response.status_code == 200:
-            print("Released valve")
+            print(f"Released valve for brew_id {self._brew_id}")
         else:
             print(response.json())
             print("Failed to release valve")
@@ -122,12 +136,3 @@ class HttpBrewClient(AbstractBrewClient):
 
     def return_to_start(self):
         pass
-
-    def __enter__(self):
-        """Context manager entry: acquire the brew, involves a request to create acquire new brew_id."""
-        self.acquire()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit: release the brew."""
-        self.release()

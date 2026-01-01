@@ -45,7 +45,7 @@ def test_flow_rate():
     response = client.post("/brew/start")
     assert response.status_code == 200
 
-    time.sleep(2)
+    time.sleep(1)
 
     response = client.get("/brew/flow_rate")
     assert response.status_code == 200
