@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from log import logger
+
 class AbstractScale(ABC):
     """
     An abstract base class representing a scale.
@@ -57,11 +59,11 @@ class MockScale(AbstractScale):
         return self._connected
 
     def connect(self):
-        print("[Mock] Scale connected.")
+        logger.info("[Mock] Scale connected.")
         self._connected = True
 
     def disconnect(self):
-        print("[Mock] Scale disconnected.")
+        logger.info("[Mock] Scale disconnected.")
         self._connected = False
 
     def get_weight(self) -> float:

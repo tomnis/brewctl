@@ -274,8 +274,8 @@ def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
     return {"status": f"stepped backward 1 step"}
 
 
-#if not COLDBREW_IS_PROD:
-if False:
+if not COLDBREW_IS_PROD:
+# if False:
     logger.info("running some tests...")
     import pytest
-    exit_code = pytest.main(["--disable-warnings", "-v", "src"])
+    exit_code = pytest.main(["--disable-warnings", "-v", "."])
