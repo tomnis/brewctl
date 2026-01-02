@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createContext, useContext } from "react";
+import React, { useEffect, useState, useId, createContext, useContext } from "react";
 import {
   Box,
   Button,
@@ -17,35 +17,90 @@ import {
   DialogActionTrigger,
 } from "@chakra-ui/react";
 
-interface Brew {
+interface BrewInProgress {
     brew_id: string;
     current_flow_rate: string
 }
 
 const BrewContext = createContext({
-  brew: null, fetchBrew: () => {}
+  brewInProgress: null, fetchBrewInProgress: () => {}
 })
 
 export default function Brew() {
-  const [brew, setBrew] = useState([])
-  const fetchBrew = async () => {
+  const [brewInProgress, setBrewInProgress] = useState([])
+
+  const fetchBrewInProgress = async () => {
     const response = await fetch("http://localhost:8000/brew/status")
-    const brew = await response.json()
-    console.log(brew)
-    setBrew(brew)
+    const brewInProgress = await response.json()
+    console.log(brewInProgress)
+    setBrewInProgress(brewInProgress)
   }
   useEffect(() => {
-    fetchBrew()
+    fetchBrewInProgress()
   }, [])
 
   return (
-    <BrewContext.Provider value={{brew, fetchBrew}}>
+    <BrewContext.Provider value={{brewInProgress, fetchBrewInProgress}}>
       <Container maxW="container.xl" pt="100px">
         <Stack gap={5}>
     Brew in Progress:
-             <b key={brew.brew_id}>{brew.brew_id} {brew.current_flow_rate}</b>
+             <b key={brewInProgress.brew_id}>{brewInProgress.brew_id} {brewInProgress.current_flow_rate}</b>
         </Stack>
+        <StartBrew />
       </Container>
     </BrewContext.Provider>
   )
+}
+
+
+function StartBrew() {
+    const [startBrewRequest, setStartBrewRequest] = React.useState("")
+    const {brewInProgress, fetchBrewInProgress} = React.useContext(BrewContext)
+
+     const handleInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+       setBrewRequest(event.target.value)
+     }
+
+
+    // handle "brew start buttonw"
+     const handleSubmit =(event: React.FormEvent<HTMLFormElement>) => {
+         event.preventDefault()
+         console.log(startBrewRequest)
+         const newBrewRequest = {
+           "target_flow_rate": startBrewRequest.target_flow_rate,
+           "valve_interval": startBrewRequest.valve_interval,
+           "epsilon": startBrewRequest.epsilon,
+         }
+
+         fetch("http://localhost:8000/brew/start", {
+           method: "POST",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify(newBrewRequest)
+         }).then(fetchBrewInProgress)
+     }
+
+   const targetFlowRateInputId = useId();
+   const valveIntervalInputId = useId();
+   const epsilonInputId = useId();
+
+
+
+   return (
+     <BrewContext.Provider value={{startBrewRequest, fetchBrewInProgress}}>
+       <Container maxW="container.xl" pt="100px">
+           <form onSubmit={handleSubmit}>
+               <label htmlFor={targetFlowRateInputId}>target_flow_rate:</label>
+               <Input type="text" id={targetFlowRateInputId} placeholder="0.05" aria-label="target_flow_rate"/>
+
+               <label htmlFor={valveIntervalInputId}>valve_interval:</label>
+               <Input type="text" id={valveIntervalInputId} placeholder="60" aria-label="valve_interval"/>
+
+               <label htmlFor={epsilonInputId}>epsilon:</label>
+               <Input type="text" id={epsilonInputId} placeholder="0.08" aria-label="epsilon"/>
+               <button type="submit">start_brew</button>
+           </form>
+       </Container>
+     </BrewContext.Provider>
+   )
+
 }

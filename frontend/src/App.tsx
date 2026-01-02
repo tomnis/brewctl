@@ -12,7 +12,6 @@ function App() {
     <ChakraProvider value={defaultSystem}>
       <Header />
       <Brew />
-      <BrewStart />
 
     </ChakraProvider>
   )
