@@ -42,6 +42,7 @@ export default function Brew() {
     <BrewContext.Provider value={{brew, fetchBrew}}>
       <Container maxW="container.xl" pt="100px">
         <Stack gap={5}>
+    Brew in Progress:
              <b key={brew.brew_id}>{brew.brew_id} {brew.current_flow_rate}</b>
         </Stack>
       </Container>

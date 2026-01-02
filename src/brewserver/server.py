@@ -5,6 +5,8 @@ import time
 from contextlib import asynccontextmanager
 from log import logger
 from fastapi import FastAPI, Query, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+
 from pydantic import validator
 from typing import Annotated
 
@@ -87,6 +89,19 @@ Kill endpoints are also provided to forcefully kill an in-progress brew.
 """
 app = FastAPI(lifespan=lifespan)
 
+origins = [
+    "http://localhost:5173",
+    "localhost:5173"
+]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 def get_scale_status() -> ScaleStatus:
     """
