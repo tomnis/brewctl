@@ -28,7 +28,7 @@ logger.warning("hi thee")
 logging.basicConfig(
     level=logging.INFO,
     #format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    format="      %(levelname)s   %(filename)s:%(lineno)d - %(message)s",
+    format="      %(levelname)s   %(filename)s::%(funcName)s:%(lineno)d - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 # TODO somehow this modifies the uvicorn logger, avoid

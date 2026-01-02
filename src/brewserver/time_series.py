@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from log import logger
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from retry import retry
@@ -31,13 +32,13 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         self.token = token
         self.org = org
         self.bucket = bucket
-        # print(f"instantiated client: {self.url} {self.org} {self.bucket}")
+        # logger.info(f"instantiated client: {self.url} {self.org} {self.bucket}")
         self.influxdb = InfluxDBClient(url=url, token=token, org=org, timeout=timeout)
 
 
     @retry(tries=10, delay=2)
     def write_scale_data(self, weight: float, battery_pct: int):
-        # print(f"writing influxdb data: {weight} {battery_pct}")
+        # logger.info(f"writing influxdb data: {weight} {battery_pct}")
         p = Point("coldbrew").field("weight_grams", weight).field("battery_pct", battery_pct)
         # TODO this should be async
         write_api = self.influxdb.write_api(write_options=SYNCHRONOUS)
@@ -53,7 +54,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         tables = query_api.query(org=self.org, query=query)
         for table in tables:
             for record in table.records:
-                print(f"Time: {record.get_time()}, Value: {record.get_value()}")
+                logger.info(f"Time: {record.get_time()}, Value: {record.get_value()}")
 
         # TODO handle empty case
         result = tables[-1].records[-1]
@@ -70,7 +71,11 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         tables = query_api.query(org=self.org, query=query)
         for table in tables:
             for record in table.records:
-                print(f"Time: {record.get_time()}, Value: {record.get_value()}")
+                value = record.get_value()
+                if value is None:
+                    value = 0.0
+
+                logger.info(f"Time: {record.get_time()}, Value: {value:.4f}")
 
         # TODO it does actually seem better to take the last value here
         # even though its noisy and not necessarily representative of the full period

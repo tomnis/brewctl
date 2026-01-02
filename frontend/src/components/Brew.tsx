@@ -40,6 +40,7 @@ export default function Brew() {
     fetchBrewInProgress()
   }, [])
 
+  // TODO should only show this if there is currently a brew in progress
   return (
     <BrewContext.Provider value={{brewInProgress, fetchBrewInProgress}}>
       <Container maxW="container.xl" pt="100px">

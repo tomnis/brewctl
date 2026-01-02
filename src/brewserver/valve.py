@@ -21,6 +21,7 @@ class AbstractValve(ABC):
     def return_to_start(self):
         """Return the valve to the starting position."""
 
+from log import logger
 
 class MockValve(AbstractValve):
     """A mock implementation of the Valve class for testing purposes."""
@@ -30,16 +31,16 @@ class MockValve(AbstractValve):
         self.position = 0  # Track the current position of the valve
 
     def release(self):
-        print("[Mock] Valve released.")
+        logger.info("[Mock] Valve released.")
 
     def step_forward(self):
         self.position += 1
-        print(f"[Mock] Stepped forward to position {self.position}.")
+        logger.info(f"[Mock] Stepped forward to position {self.position}.")
 
     def step_backward(self):
         self.position -= 1
-        print(f"[Mock] Stepped backward to position {self.position}.")
+        logger.info(f"[Mock] Stepped backward to position {self.position}.")
 
     def return_to_start(self):
         self.position = 0
-        print("[Mock] Valve returns to start.")
+        logger.info("[Mock] Valve returns to start.")

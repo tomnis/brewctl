@@ -32,19 +32,17 @@ class DefaultBrewStrategy(AbstractBrewStrategy):
     def step(self, current_flow_rate: float) -> Tuple[ValveCommand, int]:
         """Perform a single step in the default brewing strategy."""
         # return valve command, and sleep time
-        print("====")
-        print("Current flow rate:", current_flow_rate)
+        msg = f"current flow rate: {current_flow_rate:.4f}g/s"
         if current_flow_rate is None:
-            print("result is none")
+            logger.info("result is none")
             return ValveCommand.NOOP, self.valve_interval
-
         elif abs(self.target_flow_rate - current_flow_rate) <= self.epsilon:
-            print("just right")
+            logger.info(f"{msg} (just right)")
             return ValveCommand.NOOP, self.valve_interval * 2
         # TODO should consider microadjustments here
         elif current_flow_rate <= self.target_flow_rate:
-            print("too slow")
+            logger.info(f"{msg} (too slow)")
             return ValveCommand.FORWARD, self.valve_interval
         else:
-            print("too fast")
+            logger.info(f"{msg} (too fast)")
             return ValveCommand.BACKWARD, self.valve_interval

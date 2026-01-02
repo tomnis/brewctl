@@ -24,7 +24,7 @@ cur_brew_id = None
 
 def create_scale() -> AbstractScale:
     if COLDBREW_IS_PROD:
-        print("Initializing production scale...")
+        logger.info("Initializing production scale...")
         from pi.LunarScale import LunarScale
         s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
     else:
@@ -36,7 +36,7 @@ def create_scale() -> AbstractScale:
 
 def create_valve() -> AbstractValve:
     if COLDBREW_IS_PROD:
-        print("Initializing production valve...")
+        logger.info("Initializing production valve...")
         from pi.MotorKitValve import MotorKitValve
         v: AbstractValve = MotorKitValve()
     else:
@@ -69,9 +69,7 @@ async def lifespan(app: FastAPI):
     Try our best to manage the scale connection, but restart is finicky
     We don't need to eagerly connect to the scale here, just make sure we disconnect on shutdown
     """
-    # TODO good place to configure logger?
-    logger.info("lifespan: server startup complete")
-    logger.warning("hi thee")
+    logger.info("lifespan: server startup complete, yielding control")
     yield
     if scale is not None:
         scale.disconnect()
@@ -133,7 +131,7 @@ class MatchBrewId(BaseModel):
     @validator('brew_id')
     def brew_id_must_match(cls, v):
         global cur_brew_id
-        # print(f"cur brew id: {cur_brew_id}")
+        # logger.info(f"cur brew id: {cur_brew_id}")
         if cur_brew_id is None:
             raise ValueError('no brew_id in progress')
         elif v != cur_brew_id:
@@ -146,11 +144,11 @@ async def collect_scale_data_task(brew_id, s):
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
         scale_state = get_scale_status()
-        # print(f"Scale state: {scale_state}")
+        # logger.info(f"Scale state: {scale_state}")
         weight = scale_state.weight
         battery_pct = scale_state.battery_pct
         if weight is not None and battery_pct is not None:
-            # print(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
+            # logger.info(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
             # TODO could add a brew_id label here
             time_series.write_scale_data(weight, battery_pct)
         await asyncio.sleep(s)
@@ -174,7 +172,7 @@ async def brew_step_task(brew_id, strategy):
 
 @app.post("/brew/start")
 async def start_brew(req: StartBrewRequest | None = None):
-    # print(f"brew start request: {req}")
+    # logger.info(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
     global cur_brew_id
     if cur_brew_id is None:
@@ -185,7 +183,7 @@ async def start_brew(req: StartBrewRequest | None = None):
         else:
             strategy = DefaultBrewStrategy.from_request(req)
 
-        # print(f"strategy: {str(strategy)}")
+        # logger.info(f"strategy: {str(strategy)}")
 
         # start scale read and brew tasks
         asyncio.create_task(collect_scale_data_task(cur_brew_id, COLDBREW_SCALE_READ_INTERVAL))
@@ -229,7 +227,7 @@ async def acquire_brew():
         asyncio.create_task(collect_scale_data_task(cur_brew_id, COLDBREW_SCALE_READ_INTERVAL))
         return {"status": "valve acquired", "brew_id": new_id}  # Placeholder response
     else:
-        # print(f"brew id {cur_brew_id} already acquired")
+        # logger.info(f"brew id {cur_brew_id} already acquired")
         return {"status": "valve already acquired"}  # Placeholder response kkk
 
 @app.post("/brew/release")
@@ -289,8 +287,8 @@ def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
     return {"status": f"stepped backward 1 step"}
 
 
-if not COLDBREW_IS_PROD:
-# if False:
+# if not COLDBREW_IS_PROD:
+if False:
     logger.info("running some tests...")
     import pytest
     exit_code = pytest.main(["--disable-warnings", "-v", "."])
