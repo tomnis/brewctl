@@ -31,8 +31,8 @@ class DefaultBrewStrategy(AbstractBrewStrategy):
 
     def step(self, current_flow_rate: float) -> Tuple[ValveCommand, int]:
         """Perform a single step in the default brewing strategy."""
-        # return valve command, and sleep time
-        msg = f"current flow rate: {current_flow_rate:.4f}g/s"
+        current_flow_rate_str = "None" if current_flow_rate is None else f"{current_flow_rate:.4f}g/s"
+        msg = f"current flow rate: {current_flow_rate_str}"
         if current_flow_rate is None:
             logger.info("result is none")
             return ValveCommand.NOOP, self.valve_interval

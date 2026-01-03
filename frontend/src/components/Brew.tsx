@@ -35,10 +35,25 @@ export default function Brew() {
     console.log(brewInProgress)
     setBrewInProgress(brewInProgress)
   }
+
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  const backgroundRefreshBrewInProgress = async () => {
+      fetchBrewInProgress()
+      await delay(4000); // Waits for a few seconds
+      console.log("recursive call")
+      backgroundRefreshBrewInProgress()
+  }
+
+//   useEffect(() => {
+      // TODO somehow call this repeatedly to update brew in progress
+//     fetchBrewInProgress()
+//   }, [])
   useEffect(() => {
       // TODO somehow call this repeatedly to update brew in progress
-    fetchBrewInProgress()
+    backgroundRefreshBrewInProgress()
   }, [])
+
 
   // TODO should only show this if there is currently a brew in progress
   return (
@@ -46,7 +61,7 @@ export default function Brew() {
       <Container maxW="container.xl" pt="100px">
         <Stack gap={5}>
     Brew in Progress:
-             <b key={brewInProgress.brew_id}>id={brewInProgress.brew_id} flow_rate={brewInProgress.current_flow_rate} weight={brewInProgress.current_weight}</b>
+             <b key={brewInProgress.brew_id}>[id={brewInProgress.brew_id}]   [flow_rate={brewInProgress.current_flow_rate}]   [weight={brewInProgress.current_weight}]</b>
         </Stack>
         <CancelBrew fetchBrewInProgress={fetchBrewInProgress} />
         <StartBrew />
