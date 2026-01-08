@@ -22,6 +22,7 @@ const apiUrl = import.meta.env.COLDBREW_FRONTEND_API_URL;
 interface BrewInProgress {
     brew_id: string;
     current_flow_rate: string
+    current_weight: string
 }
 
 const BrewContext = createContext({
@@ -49,12 +50,8 @@ export default function Brew() {
 
 //   useEffect(() => {
       // TODO somehow call this repeatedly to update brew in progress
-//     fetchBrewInProgress()
+//     backgroundRefreshBrewInProgress()
 //   }, [])
-  useEffect(() => {
-      // TODO somehow call this repeatedly to update brew in progress
-    backgroundRefreshBrewInProgress()
-  }, [])
 
 
   // TODO should only show this if there is currently a brew in progress

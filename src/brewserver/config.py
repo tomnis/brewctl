@@ -28,3 +28,7 @@ COLDBREW_EPSILON = float(os.environ.get('COLDBREW_EPSILON', '0.008'))
 # how often to check the flow rate and adjust the valve (in seconds)
 COLDBREW_VALVE_INTERVAL_SECONDS = int(os.environ.get('COLDBREW_VALVE_INTERVAL_SECONDS', '60'))
 logger.info(f"COLDBREW_VALVE_INTERVAL_SECONDS = {COLDBREW_VALVE_INTERVAL_SECONDS}")
+# ===== end brew-specific configuration =====
+
+
+COLDBREW_FRONTEND_API_URL= os.getenv("COLDBREW_FRONTEND_API_URL", 'http://localhost:8000')

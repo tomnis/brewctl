@@ -89,6 +89,7 @@ app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:5173",
+    COLDBREW_FRONTEND_API_URL,
     "localhost:5173"
 ]
 
@@ -209,7 +210,12 @@ async def brew_status():
         timestamp = datetime.now(timezone.utc)
         current_flow_rate = time_series.get_current_flow_rate()
         current_weight = scale.get_weight()
-        res = BrewStatus(brew_id=brew_id, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
+        if current_weight is None:
+            res = {"status": "scale not connected"}
+        elif current_flow_rate is None:
+            res = {"status": "insufficient data for flow rate"}
+        else:
+            res = BrewStatus(brew_id=brew_id, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
         return res
 
 
