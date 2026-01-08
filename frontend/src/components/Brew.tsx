@@ -137,8 +137,6 @@ const CancelBrew: React.FC = () => {
   return <Button h="1.5rem" onClick={cancelBrew}>cancel_brew</Button>;
 };
 
-// typescript
-// typescript
 function StartBrew() {
   const DEFAULT_FLOW = "0.05";
   const DEFAULT_VALVE_INTERVAL = "60";
@@ -149,6 +147,7 @@ function StartBrew() {
   const [epsilon, setEpsilon] = React.useState("");
   const [targetFlowError, setTargetFlowError] = React.useState<string | null>(null);
   const [valveIntervalError, setValveIntervalError] = React.useState<string | null>(null);
+  const [epsilonError, setEpsilonError] = React.useState<string | null>(null);
   const { fetchBrewInProgress } = React.useContext(BrewContext);
 
   const validateTargetFlowInput = (value: string): string | null => {
@@ -169,11 +168,22 @@ function StartBrew() {
     return null;
   };
 
+  const validateEpsilonInput = (value: string): string | null => {
+    const trimmed = value.trim();
+    if (!trimmed) return null; // empty -> will use default (valid)
+    const n = Number(trimmed);
+    if (Number.isNaN(n)) return "epsilon must be a number";
+    if (n <= 0) return "epsilon must be greater than 0.0";
+    if (n >= 4) return "epsilon must be less than 4.0";
+    return null;
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const effectiveTargetFlow = targetFlowRate.trim() || DEFAULT_FLOW;
     const effectiveValveInterval = valveInterval.trim() || DEFAULT_VALVE_INTERVAL;
+    const effectiveEpsilon = epsilon.trim() || DEFAULT_EPSILON;
 
     const targetErr = validateTargetFlowInput(effectiveTargetFlow);
     if (targetErr) {
@@ -187,10 +197,16 @@ function StartBrew() {
       return;
     }
 
+    const epsErr = validateEpsilonInput(effectiveEpsilon);
+    if (epsErr) {
+      setEpsilonError(epsErr);
+      return;
+    }
+
     const newBrewRequest = {
       target_flow_rate: effectiveTargetFlow,
       valve_interval: effectiveValveInterval,
-      epsilon: epsilon.trim() || DEFAULT_EPSILON,
+      epsilon: effectiveEpsilon,
     };
 
     try {
@@ -253,13 +269,23 @@ function StartBrew() {
         <label htmlFor={epsilonInputId}>epsilon (g/sec):</label>
         <Input
           value={epsilon}
-          onChange={(e) => setEpsilon(e.target.value)}
+          onChange={(e) => {
+            setEpsilon(e.target.value);
+            setEpsilonError(validateEpsilonInput(e.target.value));
+          }}
           type="text"
           id={epsilonInputId}
           placeholder={DEFAULT_EPSILON}
           aria-label="epsilon"
+          aria-invalid={!!epsilonError}
         />
-        <Button type="submit" isDisabled={!!targetFlowError || !!valveIntervalError}>start_brew</Button>
+        {epsilonError && (
+          <Text color="red.500" fontSize="sm" mt={1}>
+            {epsilonError}
+          </Text>
+        )}
+
+        <Button type="submit" isDisabled={!!targetFlowError || !!valveIntervalError || !!epsilonError}>start_brew</Button>
       </form>
     </Container>
   );
