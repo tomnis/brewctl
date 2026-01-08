@@ -16,6 +16,8 @@ import {
   Text,
   DialogActionTrigger,
 } from "@chakra-ui/react";
+const apiUrl = import.meta.env.COLDBREW_FRONTEND_API_URL;
+
 
 interface BrewInProgress {
     brew_id: string;
@@ -30,7 +32,7 @@ export default function Brew() {
   const [brewInProgress, setBrewInProgress] = useState([])
 
   const fetchBrewInProgress = async () => {
-    const response = await fetch("http://localhost:8000/brew/status")
+    const response = await fetch(`${apiUrl}/brew/status`)
     const brewInProgress = await response.json()
     console.log(brewInProgress)
     setBrewInProgress(brewInProgress)
@@ -73,7 +75,7 @@ export default function Brew() {
 
 const CancelBrew = ({fetchBrewInProgress}) => {
    const cancelBrew = async() => {
-       await fetch('http://localhost:8000/brew/kill', {
+       await fetch(`${apiUrl}/brew/kill`, {
            method: "POST"
        })
        await fetchBrewInProgress()
@@ -103,7 +105,7 @@ function StartBrew() {
            "epsilon": startBrewRequest.epsilon,
          }
 
-         fetch("http://localhost:8000/brew/start", {
+         fetch(`${apiUrl}/brew/start`, {
            method: "POST",
            headers: { "Content-Type": "application/json" },
            body: JSON.stringify(newBrewRequest)
