@@ -5,6 +5,8 @@ import time
 from contextlib import asynccontextmanager
 from log import logger
 from fastapi import FastAPI, Query, HTTPException, status
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from pydantic import validator
@@ -102,6 +104,8 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+
+
 def get_scale_status() -> ScaleStatus:
     """
     Reads status from the scale. Used for both a specific endpoint, and polling+writing scale data as part of the event loop.
@@ -120,7 +124,7 @@ def get_scale_status() -> ScaleStatus:
     else:
         return ScaleStatus(connected=False, weight=None, units=None, battery_pct=None)
 
-@app.get("/scale")
+@app.get("/api/scale")
 def read_scale():
     return get_scale_status()
 
@@ -171,7 +175,7 @@ async def brew_step_task(brew_id, strategy):
 
 
 
-@app.post("/brew/start")
+@app.post("/api/brew/start")
 async def start_brew(req: StartBrewRequest | None = None):
     logger.info(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
@@ -193,13 +197,13 @@ async def start_brew(req: StartBrewRequest | None = None):
     else:
         raise HTTPException(status_code=409, detail="brew already in progress")
 
-@app.post("/brew/stop")
+@app.post("/api/brew/stop")
 async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
     """Politely stops the given brew."""
     return await release_brew(brew_id)
 
 
-@app.get("/brew/status")
+@app.get("/api/brew/status")
 async def brew_status():
     """Gets the current brew status."""
     global cur_brew_id
@@ -222,7 +226,7 @@ async def brew_status():
 
 
 # use acquire/release semantics to start scale data collection but expected to manage brew logic clientside
-@app.post("/brew/acquire")
+@app.post("/api/brew/acquire")
 async def acquire_brew():
     """Acquire the brew valve for exclusive use."""
     global cur_brew_id
@@ -236,7 +240,7 @@ async def acquire_brew():
         # logger.info(f"brew id {cur_brew_id} already acquired")
         return {"status": "valve already acquired"}  # Placeholder response kkk
 
-@app.post("/brew/release")
+@app.post("/api/brew/release")
 async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
     """Gracefully release the current brew."""
     global cur_brew_id
@@ -255,7 +259,7 @@ async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
     return {"status": f"valve brew id ${old_id} released"}  # Placeholder response
 
 
-@app.post("/brew/kill")
+@app.post("/api/brew/kill")
 async def kill_brew():
     """Forcefully kill the current brew."""
     global cur_brew_id
@@ -271,26 +275,38 @@ async def kill_brew():
 
 
 # TODO maybe not needed? might be better to just use the status end point
-@app.get("/brew/flow_rate")
+@app.get("/api/brew/flow_rate")
 def read_flow_rate():
     """Read the current flow rate from the time series."""
     flow_rate = time_series.get_current_flow_rate()
     return {"brew_id": cur_brew_id, "flow_rate": flow_rate}
 
 
-@app.post("/brew/valve/forward")
+@app.post("/api/brew/valve/forward")
 def step_forward(brew_id: Annotated[MatchBrewId, Query()],):
     """Step the valve forward one step."""
     valve.step_forward()
     time.sleep(0.1)
     return {"status": f"stepped forward one step"}
 
-@app.post("/brew/valve/backward")
+@app.post("/api/brew/valve/backward")
 def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
     """Step the valve backward one step."""
     valve.step_backward()
     time.sleep(0.1)
     return {"status": f"stepped backward 1 step"}
+
+
+
+#---- ui endpoints ----#
+# for react assets
+app.mount("/static", StaticFiles(directory="build/static"), name="static")
+
+# catchall for react (must be last?)
+@app.get("/{full_path:path}")
+async def serve_react_app(full_path: str):
+    return FileResponse("build/index.html")
+
 
 
 if not COLDBREW_IS_PROD:
