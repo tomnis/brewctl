@@ -300,7 +300,10 @@ def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
 
 #---- ui endpoints ----#
 # for react assets
-app.mount("/app/assets", StaticFiles(directory="build/assets"), name="assets")
+assets_dir = "build/assets"
+if not os.path.exists(assets_dir):
+    os.makedirs(assets_dir)
+app.mount("/app/assets", StaticFiles(directory=assets_dir), name="assets")
 
 # catchall for react (must be last?)
 @app.get("/app/{full_path:path}")

@@ -8,6 +8,7 @@ export default defineConfig({
   // TODO need to change when deploying?
   base: "http://localhost:8000/app",
   server: {
+      host: '0.0.0.0',
       allowedHosts: [
         'coldbrewer.local',
         'pi4.local'
