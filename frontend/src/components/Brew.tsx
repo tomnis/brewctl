@@ -283,7 +283,7 @@ function StartBrew() {
           </Text>
         )}
 
-        <Button type="submit" isDisabled={!!targetFlowError || !!valveIntervalError || !!epsilonError}>start_brew</Button>
+        <Button type="submit" disabled={!!targetFlowError || !!valveIntervalError || !!epsilonError}>start_brew</Button>
       </form>
     </Container>
   );

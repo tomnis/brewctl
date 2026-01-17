@@ -1,7 +1,7 @@
 version: '3.8'
 services:
-  backend:
-    build: ./backend
+  app:
+    build: .
     environment:
       - COLDBREW_IS_PROD=false
       - COLDBREW_SCALE_MAC_ADDRESS=${COLDBREW_SCALE_MAC_ADDRESS}
@@ -9,17 +9,6 @@ services:
       - COLDBREW_INFLUXDB_URL=${COLDBREW_INFLUXDB_URL}
       - COLDBREW_INFLUXDB_ORG=${COLDBREW_INFLUXDB_ORG}
       - COLDBREW_VALVE_INTERVAL_SECONDS=${COLDBREW_VALVE_INTERVAL_SECONDS}
+      - COLDBREW_FRONTEND_API_URL=${COLDBREW_FRONTEND_API_URL}
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
-
-  frontend:
-    build: ./frontend
-    environment:
-      - COLDBREW_FRONTEND_API_URL=${COLDBREW_FRONTEND_API_URL}
-      - COLDBREW_IS_PROD=false
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend/src:/app/src
