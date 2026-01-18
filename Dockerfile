@@ -4,6 +4,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm i
 
+ARG COLDBREW_FRONTEND_API_URL
 ENV COLDBREW_FRONTEND_API_URL=$COLDBREW_FRONTEND_API_URL
 # copy frontend sources
 COPY frontend/ ./
