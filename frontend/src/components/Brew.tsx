@@ -7,7 +7,9 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-const apiUrl = import.meta.env.COLDBREW_FRONTEND_API_URL;
+// TODO this doesnt work override at docker build time
+const apiUrl = (import.meta.env.COLDBREW_FRONTEND_API_URL as string) || "http://localhost:8000/api";
+console.log("apiUrl: " + apiUrl);
 
 interface BrewInProgress {
   brew_id: string;

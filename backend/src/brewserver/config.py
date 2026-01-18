@@ -31,4 +31,4 @@ logger.info(f"COLDBREW_VALVE_INTERVAL_SECONDS = {COLDBREW_VALVE_INTERVAL_SECONDS
 # ===== end brew-specific configuration =====
 
 
-COLDBREW_FRONTEND_API_URL= os.getenv("COLDBREW_FRONTEND_API_URL", 'http://localhost:8000')
+COLDBREW_FRONTEND_API_URL= os.getenv("COLDBREW_FRONTEND_API_URL", 'http://localhost:8000/api')
