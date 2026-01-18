@@ -2,7 +2,7 @@ FROM node:25.3.0-alpine AS node-build
 WORKDIR /app/frontend
 # install npm deps
 COPY frontend/package*.json ./
-RUN npm i
+RUN npm i  --no-audit
 
 ARG COLDBREW_FRONTEND_API_URL
 ENV COLDBREW_FRONTEND_API_URL=$COLDBREW_FRONTEND_API_URL
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # copy backend code
 COPY backend/src/ ./src/
-# copy built frontend assets (adjust source path if your frontend build outputs elsewhere)
+# copy built frontend assets
 COPY --from=node-build /app/frontend/dist/ ./build/
 EXPOSE 8000
 CMD ["fastapi", "dev",  "src/brewserver/server.py", "--host", "0.0.0.0"]
