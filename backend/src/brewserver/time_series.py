@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from log import logger
 from influxdb_client import InfluxDBClient, Point
@@ -61,7 +62,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         return result.get_value()
 
     @retry(tries=10, delay=4)
-    def get_current_flow_rate(self) -> float:
+    def get_current_flow_rate(self) -> float | None:
         query_api = self.influxdb.query_api()
         query = f'import "experimental/aggregate"\
         from(bucket: "{self.bucket}")\
@@ -82,4 +83,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         # TODO handle empty case
         result = tables[-1].records[-1]
         # TODO consider calculating the mean here
-        return result.get_value()
+        if result is None:
+            return None
+        else:
+            return result.get_value()
