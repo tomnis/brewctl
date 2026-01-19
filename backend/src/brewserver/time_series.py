@@ -36,7 +36,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         self.influxdb = InfluxDBClient(url=url, token=token, org=org, timeout=timeout)
 
 
-    @retry(tries=10, delay=2)
+    @retry(tries=10, delay=4)
     def write_scale_data(self, weight: float, battery_pct: int):
         # logger.info(f"writing influxdb data: {weight} {battery_pct}")
         p = Point("coldbrew").field("weight_grams", weight).field("battery_pct", battery_pct)
@@ -45,7 +45,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         write_api.write(bucket=self.bucket, record=p)
 
 
-    @retry(tries=10, delay=2)
+    @retry(tries=10, delay=4)
     def get_current_weight(self) -> float:
         query_api = self.influxdb.query_api()
         query = f'from(bucket: "{self.bucket}")\
@@ -60,7 +60,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         result = tables[-1].records[-1]
         return result.get_value()
 
-    @retry(tries=10, delay=2)
+    @retry(tries=10, delay=4)
     def get_current_flow_rate(self) -> float:
         query_api = self.influxdb.query_api()
         query = f'import "experimental/aggregate"\

@@ -2,6 +2,7 @@ version: '3.8'
 services:
   app:
     build: .
+    privileged: true
     environment:
       - COLDBREW_IS_PROD=${COLDBREW_IS_PROD}
       - COLDBREW_SCALE_MAC_ADDRESS=${COLDBREW_SCALE_MAC_ADDRESS}
@@ -11,3 +12,5 @@ services:
       - COLDBREW_VALVE_INTERVAL_SECONDS=${COLDBREW_VALVE_INTERVAL_SECONDS}
     ports:
       - "8000:8000"
+    volumes:
+      - /var/run/dbus:/var/run/dbus

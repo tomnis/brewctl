@@ -15,10 +15,11 @@ RUN npm run build
 # --------------------
 # Final runtime stage
 # --------------------
-FROM python:3.13-alpine AS runtime
+FROM python:3.13 AS runtime
 
 WORKDIR /app
 # install pip deps
+RUN apt-get update && apt-get upgrade -y && apt-get install -y gcc bluez
 COPY backend/requirements/ ./requirements/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements/base.txt && \
