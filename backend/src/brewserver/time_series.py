@@ -81,8 +81,10 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         # TODO it does actually seem better to take the last value here
         # even though its noisy and not necessarily representative of the full period
         # TODO handle empty case
-        result = tables[-1].records[-1]
         # TODO consider calculating the mean here
+        if tables is None or len(tables) == 0:
+            return None
+        result = tables[-1].records[-1]
         if result is None:
             return None
         else:
