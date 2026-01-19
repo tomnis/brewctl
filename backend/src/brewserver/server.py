@@ -26,7 +26,7 @@ cur_brew_id = None
 
 def create_scale() -> AbstractScale:
     if COLDBREW_IS_PROD:
-        logger.info("Initializing production scale...")
+        logger.info("Initializing production [ac lunar] scale...")
         from pi.LunarScale import LunarScale
         s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
     else:
@@ -149,15 +149,19 @@ async def collect_scale_data_task(brew_id, s):
     """Collect scale data every s seconds while brew_id matches current brew id."""
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
-        scale_state = get_scale_status()
-        # logger.info(f"Scale state: {scale_state}")
-        weight = scale_state.weight
-        battery_pct = scale_state.battery_pct
-        if weight is not None and battery_pct is not None:
-            # logger.info(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
-            # TODO could add a brew_id label here
-            time_series.write_scale_data(weight, battery_pct)
-        await asyncio.sleep(s)
+        try:
+            scale_state = get_scale_status()
+            # logger.info(f"Scale state: {scale_state}")
+            weight = scale_state.weight
+            battery_pct = scale_state.battery_pct
+            if weight is not None and battery_pct is not None:
+                # logger.info(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
+                # TODO could add a brew_id label here
+                time_series.write_scale_data(weight, battery_pct)
+            await asyncio.sleep(s)
+        except Exception as e:
+            logger.error(f"Error collecting scale data: {e}")
+            await asyncio.sleep(s)
 
 
 
@@ -165,14 +169,18 @@ async def brew_step_task(brew_id, strategy):
     """brew"""
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
-        # get the current flow rate
-        current_flow_rate = time_series.get_current_flow_rate()
-        (valve_command, interval) = strategy.step(current_flow_rate)
-        if valve_command == ValveCommand.FORWARD:
-            valve.step_forward()
-        elif valve_command == ValveCommand.BACKWARD:
-            valve.step_backward()
-        await asyncio.sleep(interval)
+        try:
+            # get the current flow rate
+            current_flow_rate = time_series.get_current_flow_rate()
+            (valve_command, interval) = strategy.step(current_flow_rate)
+            if valve_command == ValveCommand.FORWARD:
+                valve.step_forward()
+            elif valve_command == ValveCommand.BACKWARD:
+                valve.step_backward()
+            await asyncio.sleep(interval)
+        except Exception as e:
+            logger.error(f"Error collecting valve: {e}")
+            await asyncio.sleep(strategy.valve_interval)
 
 
 
