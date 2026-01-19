@@ -92,6 +92,7 @@ app = FastAPI(lifespan=lifespan)
 origins = [
     "http://localhost:5173",
     COLDBREW_FRONTEND_API_URL,
+    COLDBREW_FRONTEND_ORIGIN,
     "localhost:5173"
 ]
 

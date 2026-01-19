@@ -16,6 +16,7 @@ logger.info(f"COLDBREW_INFLUXDB_ORG = {COLDBREW_INFLUXDB_ORG}")
 COLDBREW_INFLUXDB_BUCKET = os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') if COLDBREW_IS_PROD else os.getenv('COLDBREW_INFLUXDB_BUCKET', 'coldbrew') + '-dev'
 logger.info(f"COLDBREW_INFLUXDB_BUCKET = {COLDBREW_INFLUXDB_BUCKET}")
 
+COLDBREW_FRONTEND_ORIGIN = os.getenv('COLDBREW_FRONTEND_ORIGN', 'http://localhost:5173')
 
 
 # ===== brew-specific configuration =====
