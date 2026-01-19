@@ -34,6 +34,8 @@ class MotorKitValve(AbstractValve):
 
     def directions_to_return_to_start(self):
         # find which of the counts is larger, then return the reverse
+        if len(self.breadcrumbs) == 0:
+            return None, 0
         max_direction = max(self.breadcrumbs, key=self.breadcrumbs.get)
         opp = flip_direction(max_direction)
         count = self.breadcrumbs[max_direction]
