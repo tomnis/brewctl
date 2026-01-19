@@ -31,6 +31,13 @@ const BrewContext = createContext<BrewContextShape>({
 
 export default function Brew() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
+    const [isFlipped, setIsFlipped] = useState(false);
+
+  const handleFlip = () => {
+    setIsFlipped(!isFlipped);
+  };
+
+
 
   // ref to hold polling state, timeout id and abort controller
   const pollRef = useRef<{
@@ -105,13 +112,27 @@ export default function Brew() {
     <BrewContext.Provider value={{ brewInProgress, fetchBrewInProgress, stopPolling }}>
       <Container maxW="container.xl" pt="100px">
         <Stack gap={5}>
+
+            <div className="flip-card-container">
+              <div
+                className={`flip-card ${isFlipped ? 'flipped' : ''}`}
+                onClick={handleFlip}
+              >
+                <div className="flip-card-front">
+                Brew parameters:
+        <StartBrew />
+                </div>
+                <div className="flip-card-back">
+
           Brew in Progress:
           <b key={brewInProgress?.brew_id}>
             [id={brewInProgress?.brew_id}] [flow_rate={brewInProgress?.current_flow_rate}] [weight={brewInProgress?.current_weight}]
           </b>
-        </Stack>
         <CancelBrew />
-        <StartBrew />
+                </div>
+              </div>
+            </div>
+        </Stack>
       </Container>
     </BrewContext.Provider>
   );
@@ -140,7 +161,7 @@ const CancelBrew: React.FC = () => {
 function StartBrew() {
   const DEFAULT_FLOW = "0.05";
   const DEFAULT_VALVE_INTERVAL = "60";
-  const DEFAULT_EPSILON = "0.08";
+  const DEFAULT_EPSILON = "0.008";
 
   const [targetFlowRate, setTargetFlowRate] = React.useState("");
   const [valveInterval, setValveInterval] = React.useState("");
