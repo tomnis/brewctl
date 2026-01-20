@@ -19,14 +19,18 @@ interface BrewInProgress {
 
 type BrewContextShape = {
   brewInProgress: BrewInProgress | null;
+  isFlipped: boolean;
   fetchBrewInProgress: () => Promise<void>;
   stopPolling: () => void;
+  toggleFlip: () => void; // added
 };
 
 const BrewContext = createContext<BrewContextShape>({
   brewInProgress: null,
+  isFlipped: false,
   fetchBrewInProgress: async () => {},
   stopPolling: () => {},
+  toggleFlip: () => {}, // default no-op
 });
 
 export default function Brew() {
@@ -36,6 +40,8 @@ export default function Brew() {
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
   };
+
+  const toggleFlip = () => setIsFlipped(v => !v); // added
 
 
 
@@ -109,14 +115,14 @@ export default function Brew() {
   }, []);
 
   return (
-    <BrewContext.Provider value={{ brewInProgress, fetchBrewInProgress, stopPolling }}>
+    <BrewContext.Provider value={{ brewInProgress, isFlipped, fetchBrewInProgress, stopPolling, toggleFlip }}>
       <Container maxW="container.xl" pt="100px">
         <Stack gap={5}>
 
             <div className="flip-card-container">
               <div
                 className={`flip-card ${isFlipped ? 'flipped' : ''}`}
-                onClick={handleFlip}
+//                 onClick={handleFlip}
               >
                 <div className="flip-card-front">
                   Brew parameters:
@@ -139,7 +145,7 @@ export default function Brew() {
 }
 
 const CancelBrew: React.FC = () => {
-  const { fetchBrewInProgress, stopPolling } = React.useContext(BrewContext);
+  const { isFlipped, fetchBrewInProgress, stopPolling, toggleFlip } = React.useContext(BrewContext);
 
   const cancelBrew = async () => {
     try {
@@ -152,6 +158,7 @@ const CancelBrew: React.FC = () => {
       // stop polling immediately and refresh state once
       stopPolling();
       await fetchBrewInProgress();
+      toggleFlip();
     }
   };
 
@@ -169,7 +176,7 @@ function StartBrew() {
   const [targetFlowError, setTargetFlowError] = React.useState<string | null>(null);
   const [valveIntervalError, setValveIntervalError] = React.useState<string | null>(null);
   const [epsilonError, setEpsilonError] = React.useState<string | null>(null);
-  const { fetchBrewInProgress } = React.useContext(BrewContext);
+  const { fetchBrewInProgress, toggleFlip } = React.useContext(BrewContext);
   const [isFlipped, setIsFlipped] = useState(false);
 
   const validateTargetFlowInput = (value: string): string | null => {
@@ -243,6 +250,7 @@ function StartBrew() {
         body: JSON.stringify(newBrewRequest),
       });
       await fetchBrewInProgress();
+      toggleFlip();
     } catch (e) {
       console.error("start failed", e);
     }
@@ -315,17 +323,6 @@ function StartBrew() {
         <Button
             type="submit"
             disabled={!!targetFlowError || !!valveIntervalError || !!epsilonError}
-            onclick={(e) => {
-                setIsFlipped(!isFlipped);
-
-                           // Flip the card
-//                             const card = document.querySelector('.flip-card');
-//                             if (card) {
-//                               card.classList.toggle('flipped');
-//                             }
-                handleSubmit(e as any);
-            }}
-
         >start_brew</Button>
       </form>
     </Container>
