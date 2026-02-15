@@ -18,6 +18,11 @@
   text-shadow: 0 0 2px #33ff33, 0 0 5px #33ff33, 0 0 10px #33ff33;
 }
 
+/* Error glow effect - red to match error text */
+.error-glow {
+  text-shadow: 0 0 2px #ff0000, 0 0 5px #ff0000, 0 0 10px #ff0000;
+}
+
 /* CRT scanline overlay */
 .scanlines::before {
   content: "";

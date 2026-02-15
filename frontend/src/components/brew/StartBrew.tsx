@@ -93,7 +93,7 @@ export default function StartBrew() {
           aria-invalid={!!targetFlowError}
         />
         {targetFlowError && (
-          <Text color="red.500" fontSize="sm" mt={1}>
+          <Text className="error-glow" color="red.500" fontSize="sm" mt={1}>
             {targetFlowError}
           </Text>
         )}
@@ -112,7 +112,7 @@ export default function StartBrew() {
           aria-invalid={!!valveIntervalError}
         />
         {valveIntervalError && (
-          <Text color="red.500" fontSize="sm" mt={1}>
+          <Text className="error-glow" color="red.500" fontSize="sm" mt={1}>
             {valveIntervalError}
           </Text>
         )}
@@ -132,7 +132,7 @@ export default function StartBrew() {
               aria-invalid={!!targetWeightError}
             />
             {targetWeightError && (
-              <Text color="red.500" fontSize="sm" mt={1}>
+              <Text className="error-glow" color="red.500" fontSize="sm" mt={1}>
                 {targetWeightError}
               </Text>
             )}
@@ -151,7 +151,7 @@ export default function StartBrew() {
           aria-invalid={!!epsilonError}
         />
         {epsilonError && (
-          <Text color="red.500" fontSize="sm" mt={1}>
+          <Text className="error-glow" color="red.500" fontSize="sm" mt={1}>
             {epsilonError}
           </Text>
         )}
