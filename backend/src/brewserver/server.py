@@ -22,6 +22,7 @@ from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
 from datetime import datetime, timezone
 
+# TODO should combine these into a class
 cur_brew_id = None
 brew_state = BrewState.IDLE
 
