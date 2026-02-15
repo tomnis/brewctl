@@ -32,6 +32,16 @@ function formatETA(seconds: number | null): string {
   return `ETA: ${displayHours}:${displayMinutes} ${ampm}`;
 }
 
+function formatStartedTime(timeStarted: string | undefined): string {
+  if (!timeStarted) return "N/A";
+  
+  const date = new Date(timeStarted);
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+}
+
 export default function Brew() {
   return (
     <BrewProvider>
@@ -62,7 +72,7 @@ function BrewInner() {
     <>
       Brew in Progress:
       <b key={brewInProgress?.brew_id}>
-        [id={brewInProgress?.brew_id}] [state={brewInProgress?.brew_state}] [started={brewInProgress?.time_started}] [flow_rate={brewInProgress?.current_flow_rate ? parseFloat(brewInProgress.current_flow_rate).toFixed(3) + 'g/s' : 'N/A'}] [weight={brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + 'g' : 'N/A'}]
+        [id={brewInProgress?.brew_id?.substring(0, 8)}] [state={brewInProgress?.brew_state}] [started={formatStartedTime(brewInProgress?.time_started)}] [flow_rate={brewInProgress?.current_flow_rate ? parseFloat(brewInProgress.current_flow_rate).toFixed(3) + 'g/s' : 'N/A'}] [weight={brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + 'g' : 'N/A'}]
       </b>
       {etaString && remainingString && (
         <div>
