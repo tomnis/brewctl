@@ -22,6 +22,13 @@ export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => stopPolling();
   }, [startPolling, stopPolling]);
 
+  // When brewInProgress changes, update isFlipped to show correct side of card
+  useEffect(() => {
+    if (brewInProgress !== null) {
+      setIsFlipped(true);
+    }
+  }, [brewInProgress]);
+
   const toggleFlip = () => setIsFlipped(v => !v);
 
   const handlePause = useCallback(async () => {
