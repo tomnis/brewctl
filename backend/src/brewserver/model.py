@@ -10,6 +10,7 @@ class ValveCommand(Enum):
     NOOP = 0
     FORWARD = 1
     BACKWARD = 2
+    STOP = 3
 
 
 class ScaleStatus(BaseModel):

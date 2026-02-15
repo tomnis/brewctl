@@ -170,10 +170,17 @@ async def brew_step_task(brew_id, strategy):
     global cur_brew_id
     while brew_id is not None and brew_id == cur_brew_id:
         try:
-            # get the current flow rate
+            # get the current flow rate and weight
             current_flow_rate = time_series.get_current_flow_rate()
-            (valve_command, interval) = strategy.step(current_flow_rate)
-            if valve_command == ValveCommand.FORWARD:
+            current_weight = time_series.get_current_weight()
+            (valve_command, interval) = strategy.step(current_flow_rate, current_weight)
+            
+            if valve_command == ValveCommand.STOP:
+                logger.info(f"Target weight reached, stopping brew {brew_id}")
+                cur_brew_id = None
+                valve.release()
+                return
+            elif valve_command == ValveCommand.FORWARD:
                 valve.step_forward()
             elif valve_command == ValveCommand.BACKWARD:
                 valve.step_backward()
