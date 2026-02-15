@@ -252,10 +252,9 @@ async def brew_status():
         elif current_flow_rate is None:
             res = {"status": "insufficient data for flow rate", "brew_state": brew_state.value}
         else:
-            res = BrewStatus(brew_id=brew_id, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
+            res = BrewStatus(brew_id=brew_id, brew_state=brew_state, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
             # Add brew_state to the response
             res_dict = res.model_dump()
-            res_dict["brew_state"] = brew_state.value
             return res_dict
         return res
 

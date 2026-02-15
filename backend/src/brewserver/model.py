@@ -39,9 +39,9 @@ class StartBrewRequest(BaseModel):
 # TODO add startbrewresponse
 
 
-# TODO rename to just brew status
 class BrewStatus(BaseModel):
     brew_id: str
+    brew_state: BrewState
     timestamp: datetime
     current_flow_rate: float
     current_weight: float
