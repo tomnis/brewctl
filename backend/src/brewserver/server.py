@@ -16,12 +16,14 @@ from typing import Annotated
 from scale import AbstractScale
 from brew_strategy import DefaultBrewStrategy
 from model import *
+from model import BrewState
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
 from datetime import datetime, timezone
 
 cur_brew_id = None
+brew_state = BrewState.IDLE
 
 
 def create_scale() -> AbstractScale:
@@ -148,16 +150,19 @@ class MatchBrewId(BaseModel):
 async def collect_scale_data_task(brew_id, s):
     """Collect scale data every s seconds while brew_id matches current brew id."""
     global cur_brew_id
+    global brew_state
     while brew_id is not None and brew_id == cur_brew_id:
         try:
-            scale_state = get_scale_status()
-            # logger.info(f"Scale state: {scale_state}")
-            weight = scale_state.weight
-            battery_pct = scale_state.battery_pct
-            if weight is not None and battery_pct is not None:
-                # logger.info(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
-                # TODO could add a brew_id label here
-                time_series.write_scale_data(weight, battery_pct)
+            # Only collect data when actively brewing (not paused)
+            if brew_state == BrewState.BREWING:
+                scale_state = get_scale_status()
+                # logger.info(f"Scale state: {scale_state}")
+                weight = scale_state.weight
+                battery_pct = scale_state.battery_pct
+                if weight is not None and battery_pct is not None:
+                    # logger.info(f"Brew ID: (writing influxdb data) {cur_brew_id} Weight: {weight}, Battery: {battery_pct}%")
+                    # TODO could add a brew_id label here
+                    time_series.write_scale_data(weight, battery_pct)
             await asyncio.sleep(s)
         except Exception as e:
             logger.error(f"Error collecting scale data: {e}")
@@ -168,24 +173,32 @@ async def collect_scale_data_task(brew_id, s):
 async def brew_step_task(brew_id, strategy):
     """brew"""
     global cur_brew_id
+    global brew_state
     while brew_id is not None and brew_id == cur_brew_id:
         try:
-            # get the current flow rate and weight
-            current_flow_rate = time_series.get_current_flow_rate()
-            current_weight = time_series.get_current_weight()
-            (valve_command, interval) = strategy.step(current_flow_rate, current_weight)
-            
-            if valve_command == ValveCommand.STOP:
-                logger.info(f"Target weight reached, stopping brew {brew_id}")
-                cur_brew_id = None
-                valve.return_to_start()
-                valve.release()
-                return
-            elif valve_command == ValveCommand.FORWARD:
-                valve.step_forward()
-            elif valve_command == ValveCommand.BACKWARD:
-                valve.step_backward()
-            await asyncio.sleep(interval)
+            # Only execute valve commands when actively brewing (not paused)
+            if brew_state == BrewState.BREWING:
+                # get the current flow rate and weight
+                current_flow_rate = time_series.get_current_flow_rate()
+                current_weight = time_series.get_current_weight()
+                (valve_command, interval) = strategy.step(current_flow_rate, current_weight)
+                
+                if valve_command == ValveCommand.STOP:
+                    logger.info(f"Target weight reached, stopping brew {brew_id}")
+                    brew_state = BrewState.COMPLETED
+                    cur_brew_id = None
+                    scale.disconnect()
+                    valve.return_to_start()
+                    valve.release()
+                    return
+                elif valve_command == ValveCommand.FORWARD:
+                    valve.step_forward()
+                elif valve_command == ValveCommand.BACKWARD:
+                    valve.step_backward()
+                await asyncio.sleep(interval)
+            else:
+                # When paused, just sleep and check again
+                await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Error collecting valve: {e}")
             await asyncio.sleep(strategy.valve_interval)
@@ -197,9 +210,11 @@ async def start_brew(req: StartBrewRequest | None = None):
     logger.info(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
     global cur_brew_id
+    global brew_state
     if cur_brew_id is None:
         new_id = str(uuid.uuid4())
         cur_brew_id = new_id
+        brew_state = BrewState.BREWING
         if req is None:
             strategy = DefaultBrewStrategy()
         else:
@@ -224,20 +239,53 @@ async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
 async def brew_status():
     """Gets the current brew status."""
     global cur_brew_id
+    global brew_state
     brew_id = cur_brew_id
     if brew_id is None:
-        return {"status": "no brew in progress"}
+        return {"status": "no brew in progress", "brew_state": BrewState.IDLE.value}
     else:
         timestamp = datetime.now(timezone.utc)
         current_flow_rate = time_series.get_current_flow_rate()
         current_weight = scale.get_weight()
         if current_weight is None:
-            res = {"status": "scale not connected"}
+            res = {"status": "scale not connected", "brew_state": brew_state.value}
         elif current_flow_rate is None:
-            res = {"status": "insufficient data for flow rate"}
+            res = {"status": "insufficient data for flow rate", "brew_state": brew_state.value}
         else:
             res = BrewStatus(brew_id=brew_id, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight)
+            # Add brew_state to the response
+            res_dict = res.model_dump()
+            res_dict["brew_state"] = brew_state.value
+            return res_dict
         return res
+
+
+@app.post("/api/brew/pause")
+async def pause_brew():
+    """Pause the current brew."""
+    global brew_state
+    if brew_state == BrewState.BREWING:
+        brew_state = BrewState.PAUSED
+        logger.info("Brew paused")
+        return {"status": "paused", "brew_state": brew_state.value}
+    elif brew_state == BrewState.PAUSED:
+        return {"status": "already paused", "brew_state": brew_state.value}
+    else:
+        raise HTTPException(status_code=400, detail="no brew in progress or already completed")
+
+
+@app.post("/api/brew/resume")
+async def resume_brew():
+    """Resume a paused brew."""
+    global brew_state
+    if brew_state == BrewState.PAUSED:
+        brew_state = BrewState.BREWING
+        logger.info("Brew resumed")
+        return {"status": "resumed", "brew_state": brew_state.value}
+    elif brew_state == BrewState.BREWING:
+        return {"status": "already brewing", "brew_state": brew_state.value}
+    else:
+        raise HTTPException(status_code=400, detail="no paused brew to resume")
 
 
 
@@ -261,6 +309,7 @@ async def acquire_brew():
 async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
     """Gracefully release the current brew."""
     global cur_brew_id
+    global brew_state
     global scale
 
     old_id = cur_brew_id
@@ -273,6 +322,7 @@ async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
     scale.disconnect()
     scale = None
     cur_brew_id = None
+    brew_state = BrewState.IDLE
     return {"status": f"valve brew id ${old_id} released"}  # Placeholder response
 
 
@@ -280,10 +330,12 @@ async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
 async def kill_brew():
     """Forcefully kill the current brew."""
     global cur_brew_id
+    global brew_state
     logger.info(f"{cur_brew_id} will be killed")
     old_id = cur_brew_id
     if old_id is not None:
         cur_brew_id = None
+        brew_state = BrewState.IDLE
         valve.return_to_start()
         valve.release()
         return {"status": "killed", "brew_id": old_id}

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useBrewPolling } from "./useBrewPolling";
 import { BrewContextShape } from "./types";
+import { pauseBrew, resumeBrew } from "./constants";
 
 const BrewContext = createContext<BrewContextShape>({
   brewInProgress: null,
@@ -23,8 +24,18 @@ export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const toggleFlip = () => setIsFlipped(v => !v);
 
+  const handlePause = useCallback(async () => {
+    await pauseBrew();
+    await fetchBrewInProgress();
+  }, [fetchBrewInProgress]);
+
+  const handleResume = useCallback(async () => {
+    await resumeBrew();
+    await fetchBrewInProgress();
+  }, [fetchBrewInProgress]);
+
   return (
-    <BrewContext.Provider value={{ brewInProgress, isFlipped, fetchBrewInProgress, stopPolling, toggleFlip }}>
+    <BrewContext.Provider value={{ brewInProgress, isFlipped, fetchBrewInProgress, stopPolling, toggleFlip, handlePause, handleResume }}>
       {children}
     </BrewContext.Provider>
   );

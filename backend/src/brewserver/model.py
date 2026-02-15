@@ -6,6 +6,14 @@ from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
 
+
+class BrewState(str, Enum):
+    IDLE = "idle"
+    BREWING = "brewing"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+
+
 class ValveCommand(Enum):
     NOOP = 0
     FORWARD = 1
