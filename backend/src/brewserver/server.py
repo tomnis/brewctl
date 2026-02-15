@@ -337,6 +337,7 @@ async def kill_brew():
         cur_brew = None
         valve.return_to_start()
         valve.release()
+        scale.disconnect()
         return {"status": "killed", "brew_id": old_id}
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no brew in progress")

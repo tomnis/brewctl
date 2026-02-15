@@ -10,13 +10,17 @@ function formatTimeRemaining(seconds: number | null): string {
   if (seconds === null || seconds < 0) return "N/A";
   if (seconds === 0) return "Done!";
   
-  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   
-  if (minutes === 0) {
-    return `~${remainingSeconds}s`;
+  if (hours > 0) {
+    return `~${hours}h ${minutes}m`;
   }
-  return `~${minutes}m ${remainingSeconds}s`;
+  if (minutes > 0) {
+    return `~${minutes}m ${remainingSeconds}s`;
+  }
+  return `~${remainingSeconds}s`;
 }
 
 function formatETA(seconds: number | null): string {
@@ -25,11 +29,8 @@ function formatETA(seconds: number | null): string {
   const etaDate = new Date(Date.now() + seconds * 1000);
   const hours = etaDate.getHours();
   const minutes = etaDate.getMinutes();
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const displayHours = hours % 12 || 12;
-  const displayMinutes = minutes.toString().padStart(2, "0");
   
-  return `${displayHours}:${displayMinutes} ${ampm}`;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 }
 
 function formatStartedTime(timeStarted: string | undefined): string {
