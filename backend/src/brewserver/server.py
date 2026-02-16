@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 # Single instance of current brew instead of separate id and state
 cur_brew: Brew | None = None
 
-
 def create_scale() -> AbstractScale:
     if COLDBREW_IS_PROD:
         logger.info("Initializing production [ac lunar] scale...")
@@ -62,9 +61,9 @@ def create_time_series() -> InfluxDBTimeSeries:
     return ts
 
 
-scale = create_scale()
-valve = create_valve()
-time_series = create_time_series()
+scale: AbstractScale = create_scale()
+valve: AbstractValve = create_valve()
+time_series: AbstractTimeSeries = create_time_series()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -208,6 +207,10 @@ async def start_brew(req: StartBrewRequest | None = None):
     logger.info(f"brew start request: {req}")
     """Start a brew with the given brew ID."""
     global cur_brew
+    global scale
+    if scale is None or not scale.connected:
+        scale = create_scale()
+        scale.connect()
     if cur_brew is None:
         new_id = str(uuid.uuid4())
         target_weight = req.target_weight if req is not None else COLDBREW_TARGET_WEIGHT_GRAMS
