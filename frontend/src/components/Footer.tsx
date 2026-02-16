@@ -27,7 +27,7 @@ const Footer = () => {
       align="center"
       justify="space-between"
       wrap="wrap"
-      padding="0.75rem 1rem"
+      padding={{ base: "0.5rem 0.75rem", md: "0.75rem 1rem" }}
       bg="var(--theme-bg-secondary)"
       borderTop="2px solid var(--theme-border)"
       width="100%"
@@ -38,11 +38,14 @@ const Footer = () => {
       zIndex="1000"
       boxShadow="0 0 10px var(--theme-primary)"
       fontFamily="'VT323', 'Courier New', Courier, monospace"
+      flexDirection={{ base: "column", md: "row" }}
+      gap={{ base: 2, md: 0 }}
     >
-      <Flex align="center" gap={4}>
+      <Flex align="center" gap={{ base: 2, md: 4 }}>
         <Link
           href="https://github.com/tomnis/coldbrewer"
-          isExternal
+          target="_blank"
+          rel="noopener noreferrer"
           className="terminal-glow"
           style={{ fontSize: "0.9em", textDecoration: "none" }}
           _hover={{ color: "var(--theme-primary)" }}
@@ -50,7 +53,7 @@ const Footer = () => {
           [GitHub]
         </Link>
       </Flex>
-      <Flex align="center" gap={4}>
+      <Flex align="center" gap={{ base: 2, md: 4 }}>
         <span className="terminal-glow" style={{ fontSize: "0.9em" }}>
           [System Ready]
         </span>

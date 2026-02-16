@@ -46,8 +46,13 @@ function formatStartedTime(timeStarted: string | undefined): string {
 export default function Brew() {
   return (
     <BrewProvider>
-      <Container maxW="container.xl" pt="100px">
-        <Stack gap={5}>
+      <Container 
+        maxW="container.xl" 
+        pt={{ base: "120px", md: "100px" }}
+        px={{ base: 2, md: 4 }}
+        pb={{ base: "80px", md: "70px" }}
+      >
+        <Stack gap={{ base: 3, md: 5 }}>
           <BrewInner />
         </Stack>
       </Container>

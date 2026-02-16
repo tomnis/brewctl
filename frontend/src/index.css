@@ -171,8 +171,11 @@ h1, h2, h3, h4, h5, h6 {
 /* Flip card - terminal style */
 .flip-card-container {
   perspective: 1000px;
-  width: 520px;
+  width: 100%;
+  max-width: 520px;
   margin: 50px auto;
+  padding: 0 10px;
+  box-sizing: border-box;
 }
 
 .flip-card {
@@ -240,6 +243,7 @@ h1, h2, h3, h4, h5, h6 {
 .terminal-row {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 4px 0;
   font-size: 1.2em;
 }
@@ -254,10 +258,13 @@ h1, h2, h3, h4, h5, h6 {
 .terminal-label {
   color: var(--theme-primary);
   opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .terminal-value {
   text-shadow: 0 0 3px var(--theme-primary);
+  text-align: right;
+  word-break: break-all;
 }
 
 .terminal-footer {
@@ -267,6 +274,88 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   gap: 10px;
   justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  :root {
+    font-size: 14px;
+  }
+  
+  .flip-card-container {
+    margin: 20px auto;
+    padding: 0 5px;
+  }
+  
+  .flip-card,
+  .flip-card-front,
+  .flip-card-back {
+    min-height: 350px;
+  }
+  
+  .flip-card h2 {
+    font-size: 1.2em;
+  }
+  
+  .terminal-box {
+    padding: 10px;
+    margin: 5px 0;
+  }
+  
+  .terminal-row {
+    font-size: 1em;
+    gap: 5px;
+  }
+  
+  .terminal-label,
+  .terminal-value {
+    font-size: 0.95em;
+  }
+  
+  .terminal-footer {
+    gap: 8px;
+    padding-top: 10px;
+    margin-top: 10px;
+  }
+  
+  /* Ensure adequate touch targets on mobile */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.6em 0.8em;
+    font-size: 1em;
+  }
+  
+  .theme-select {
+    min-height: 36px;
+    font-size: 0.85em !important;
+  }
+  
+  /* Header mobile adjustments */
+  header,
+  [data-scope="nav"] {
+    padding: 0.5rem 0.75rem !important;
+  }
+}
+
+@media (max-width: 320px) {
+  :root {
+    font-size: 13px;
+  }
+  
+  .flip-card-container {
+    margin: 15px auto;
+  }
+  
+  .terminal-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  
+  .terminal-value {
+    text-align: left;
+  }
 }
 
 /* Blinking cursor */
