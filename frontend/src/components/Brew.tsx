@@ -85,15 +85,15 @@ function BrewInner() {
       </div>
       
       <div className="terminal-row">
-        <span className="terminal-label">BREW_ID</span>
+        <span className="terminal-label">BREW_ID:</span>
         <span className="terminal-value">{brewId}</span>
       </div>
       <div className="terminal-row">
-        <span className="terminal-label">TARGET_WEIGHT</span>
+        <span className="terminal-label">TARGET_WEIGHT:_</span>
         <span className="terminal-value">{targetWeight}</span>
       </div>
       <div className="terminal-row">
-        <span className="terminal-label">STARTED</span>
+        <span className="terminal-label">STARTED:_</span>
         <span className="terminal-value">{started}</span>
       </div>
       <div className="terminal-separator">______________________________________________</div>

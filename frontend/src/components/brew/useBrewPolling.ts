@@ -6,11 +6,21 @@ import { POLL_INTERVAL_MS } from "./constants";
 export function useBrewPolling() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
 
-  const pollRef = useRef<{ active: boolean; timeoutId: number | null; controller: AbortController | null }>(
-    { active: false, timeoutId: null, controller: null }
+  const pollRef = useRef<{ 
+    active: boolean; 
+    timeoutId: number | null; 
+    controller: AbortController | null;
+    skipBackground: boolean;  // When true, background polling skips updates
+  }>(
+    { active: false, timeoutId: null, controller: null, skipBackground: false }
   );
 
-  const fetchBrewInProgress = useCallback(async () => {
+  const fetchBrewInProgress = useCallback(async (options?: { skipBackground?: boolean }) => {
+    // If skipBackground is set, don't let background polling update state
+    if (options?.skipBackground !== undefined) {
+      pollRef.current.skipBackground = options.skipBackground;
+    }
+    
     if (pollRef.current.controller) {
       try { pollRef.current.controller.abort(); } catch {}
     }
@@ -29,11 +39,34 @@ export function useBrewPolling() {
   }, []);
 
   const backgroundRefreshBrewInProgress = useCallback(async () => {
-    await fetchBrewInProgress();
+    // Skip if skipBackground is set
+    if (pollRef.current.skipBackground) {
+      // Schedule next poll
+      const id = window.setTimeout(() => backgroundRefreshBrewInProgress(), POLL_INTERVAL_MS);
+      pollRef.current.timeoutId = id;
+      return;
+    }
+    
+    if (pollRef.current.controller) {
+      try { pollRef.current.controller.abort(); } catch {}
+    }
+    const controller = new AbortController();
+    pollRef.current.controller = controller;
+    try {
+      const response = await fetch(`${apiUrl}/brew/status`, { signal: controller.signal });
+      if (!response.ok) return;
+      const data = await response.json();
+      setBrewInProgress(data);
+    } catch (e) {
+      if ((e as any).name !== "AbortError") console.error("fetch error", e);
+    } finally {
+      pollRef.current.controller = null;
+    }
+    
     if (!pollRef.current.active) return;
     const id = window.setTimeout(() => backgroundRefreshBrewInProgress(), POLL_INTERVAL_MS);
     pollRef.current.timeoutId = id;
-  }, [fetchBrewInProgress]);
+  }, []);
 
   const startPolling = useCallback(() => {
     if (pollRef.current.active) return;
@@ -43,6 +76,7 @@ export function useBrewPolling() {
 
   const stopPolling = useCallback(() => {
     pollRef.current.active = false;
+    pollRef.current.skipBackground = false;
     if (pollRef.current.timeoutId != null) {
       clearTimeout(pollRef.current.timeoutId);
       pollRef.current.timeoutId = null;

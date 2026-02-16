@@ -16,60 +16,74 @@ export default function StartBrew() {
   const [targetWeightError, setTargetWeightError] = React.useState<string | null>(null);
 
   const [epsilonError, setEpsilonError] = React.useState<string | null>(null);
-  const { fetchBrewInProgress, toggleFlip } = useBrewContext();
+    const { fetchBrewInProgress, toggleFlip } = useBrewContext();
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
 
-    const effectiveTargetFlow = targetFlowRate.trim() || DEFAULT_FLOW;
-    const effectiveValveInterval = valveInterval.trim() || DEFAULT_VALVE_INTERVAL;
-    const effectiveEpsilon = epsilon.trim() || DEFAULT_EPSILON;
-    const effectiveTargetWeight = targetWeight.trim() || DEFAULT_TARGET_WEIGHT;
+      const effectiveTargetFlow = targetFlowRate.trim() || DEFAULT_FLOW;
+      const effectiveValveInterval = valveInterval.trim() || DEFAULT_VALVE_INTERVAL;
+      const effectiveEpsilon = epsilon.trim() || DEFAULT_EPSILON;
+      const effectiveTargetWeight = targetWeight.trim() || DEFAULT_TARGET_WEIGHT;
 
 
-    const targetErr = validateTargetFlowInput(effectiveTargetFlow);
-    if (targetErr) {
-      setTargetFlowError(targetErr);
-      return;
-    }
+      const targetErr = validateTargetFlowInput(effectiveTargetFlow);
+      if (targetErr) {
+        setTargetFlowError(targetErr);
+        return;
+      }
 
-    const valveErr = validateValveIntervalInput(effectiveValveInterval);
-    if (valveErr) {
-      setValveIntervalError(valveErr);
-      return;
-    }
+      const valveErr = validateValveIntervalInput(effectiveValveInterval);
+      if (valveErr) {
+        setValveIntervalError(valveErr);
+        return;
+      }
 
-    const epsErr = validateEpsilonInput(effectiveEpsilon);
-    if (epsErr) {
-      setEpsilonError(epsErr);
-      return;
-    }
+      const epsErr = validateEpsilonInput(effectiveEpsilon);
+      if (epsErr) {
+        setEpsilonError(epsErr);
+        return;
+      }
 
-    const targetWeightErr = validateTargetWeightInput(effectiveTargetWeight);
-    if (targetWeightErr) {
-      setTargetWeightError(targetWeightErr);
-      return;
-    }
+      const targetWeightErr = validateTargetWeightInput(effectiveTargetWeight);
+      if (targetWeightErr) {
+        setTargetWeightError(targetWeightErr);
+        return;
+      }
 
-    const newBrewRequest = {
-      target_flow_rate: effectiveTargetFlow,
-      valve_interval: effectiveValveInterval,
-      epsilon: effectiveEpsilon,
-      target_weight: effectiveTargetWeight,
+      const newBrewRequest = {
+        target_flow_rate: effectiveTargetFlow,
+        valve_interval: effectiveValveInterval,
+        epsilon: effectiveEpsilon,
+        target_weight: effectiveTargetWeight,
+      };
+
+      try {
+        await fetch(`${apiUrl}/brew/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newBrewRequest),
+        });
+        
+        // Poll for brew status with retries to handle race condition
+        // where the backend may not have finished persisting the brew state yet
+        const maxRetries = 5;
+        const retryDelayMs = 500;
+        
+        // Skip background polling during retry loop to prevent stale data overwriting our results
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          await fetchBrewInProgress({ skipBackground: true });
+          
+          // Wait a bit before next retry
+          await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        }
+        
+        // Don't call toggleFlip() here - the effect in BrewProvider.tsx
+        // automatically flips the card when brewInProgress has valid data
+      } catch (e) {
+        console.error("start failed", e);
+      }
     };
-
-    try {
-      await fetch(`${apiUrl}/brew/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newBrewRequest),
-      });
-      await fetchBrewInProgress();
-      toggleFlip();
-    } catch (e) {
-      console.error("start failed", e);
-    }
-  };
 
   const targetFlowRateInputId = useId();
   const valveIntervalInputId = useId();
