@@ -10,17 +10,11 @@ export function useBrewPolling() {
     active: boolean; 
     timeoutId: number | null; 
     controller: AbortController | null;
-    skipBackground: boolean;  // When true, background polling skips updates
   }>(
-    { active: false, timeoutId: null, controller: null, skipBackground: false }
+    { active: false, timeoutId: null, controller: null }
   );
 
-  const fetchBrewInProgress = useCallback(async (options?: { skipBackground?: boolean }) => {
-    // If skipBackground is set, don't let background polling update state
-    if (options?.skipBackground !== undefined) {
-      pollRef.current.skipBackground = options.skipBackground;
-    }
-    
+  const fetchBrewInProgress = useCallback(async () => {
     if (pollRef.current.controller) {
       try { pollRef.current.controller.abort(); } catch {}
     }
@@ -39,14 +33,6 @@ export function useBrewPolling() {
   }, []);
 
   const backgroundRefreshBrewInProgress = useCallback(async () => {
-    // Skip if skipBackground is set
-    if (pollRef.current.skipBackground) {
-      // Schedule next poll
-      const id = window.setTimeout(() => backgroundRefreshBrewInProgress(), POLL_INTERVAL_MS);
-      pollRef.current.timeoutId = id;
-      return;
-    }
-    
     if (pollRef.current.controller) {
       try { pollRef.current.controller.abort(); } catch {}
     }
@@ -76,7 +62,6 @@ export function useBrewPolling() {
 
   const stopPolling = useCallback(() => {
     pollRef.current.active = false;
-    pollRef.current.skipBackground = false;
     if (pollRef.current.timeoutId != null) {
       clearTimeout(pollRef.current.timeoutId);
       pollRef.current.timeoutId = null;
@@ -87,24 +72,5 @@ export function useBrewPolling() {
     }
   }, []);
 
-  // Clear any pending background poll timeout and reset skipBackground
-  // without stopping the polling cycle
-  // Also abort any in-flight request
-  const clearPendingBackgroundPoll = useCallback(() => {
-    pollRef.current.skipBackground = false;
-    if (pollRef.current.timeoutId != null) {
-      clearTimeout(pollRef.current.timeoutId);
-      pollRef.current.timeoutId = null;
-    }
-    if (pollRef.current.controller) {
-      try { pollRef.current.controller.abort(); } catch {}
-      pollRef.current.controller = null;
-    }
-    // Restart background polling to ensure the chain continues
-    if (pollRef.current.active) {
-      backgroundRefreshBrewInProgress();
-    }
-  }, [backgroundRefreshBrewInProgress]);
-
-  return { brewInProgress, fetchBrewInProgress, startPolling, stopPolling, clearPendingBackgroundPoll };
+  return { brewInProgress, fetchBrewInProgress, startPolling, stopPolling };
 }

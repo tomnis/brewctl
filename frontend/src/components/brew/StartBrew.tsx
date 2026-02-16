@@ -16,7 +16,7 @@ export default function StartBrew() {
   const [targetWeightError, setTargetWeightError] = React.useState<string | null>(null);
 
   const [epsilonError, setEpsilonError] = React.useState<string | null>(null);
-    const { fetchBrewInProgress, clearPendingBackgroundPoll, toggleFlip } = useBrewContext();
+    const { fetchBrewInProgress } = useBrewContext();
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -65,26 +65,10 @@ export default function StartBrew() {
           body: JSON.stringify(newBrewRequest),
         });
         
-        // Poll for brew status with retries to handle race condition
-        // where the backend may not have finished persisting the brew state yet
-        const maxRetries = 5;
-        const retryDelayMs = 500;
-        
-        // Skip background polling during retry loop to prevent stale data overwriting our results
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          await fetchBrewInProgress({ skipBackground: true });
-          
-          // Wait a bit before next retry
-          await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-        }
-        
-        // Clear any pending background poll and reset skipBackground, then do one final fetch
-        // This ensures background polling resumes with correct data and the scheduled timeout doesn't use stale skipBackground value
-        clearPendingBackgroundPoll();
+        // Wait for backend to persist state, then fetch
+        // Background polling is already running and will pick up the new state
+        await new Promise(resolve => setTimeout(resolve, 1500));
         await fetchBrewInProgress();
-        
-        // Don't call toggleFlip() here - the effect in BrewProvider.tsx
-        // automatically flips the card when brewInProgress has valid data
       } catch (e) {
         console.error("start failed", e);
       }

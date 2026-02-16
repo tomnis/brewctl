@@ -9,13 +9,12 @@ const BrewContext = createContext<BrewContextShape>({
   fetchBrewInProgress: async () => {},
   stopPolling: () => {},
   toggleFlip: () => {},
-  clearPendingBackgroundPoll: () => {},
 });
 
 export const useBrewContext = () => useContext(BrewContext);
 
 export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { brewInProgress, fetchBrewInProgress, startPolling, stopPolling, clearPendingBackgroundPoll } = useBrewPolling();
+  const { brewInProgress, fetchBrewInProgress, startPolling, stopPolling } = useBrewPolling();
   const [isFlipped, setIsFlipped] = useState(false);
 
   useEffect(() => {
@@ -43,7 +42,7 @@ export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [fetchBrewInProgress]);
 
   return (
-    <BrewContext.Provider value={{ brewInProgress, isFlipped, fetchBrewInProgress, stopPolling, clearPendingBackgroundPoll, toggleFlip, handlePause, handleResume }}>
+    <BrewContext.Provider value={{ brewInProgress, isFlipped, fetchBrewInProgress, stopPolling, toggleFlip, handlePause, handleResume }}>
       {children}
     </BrewContext.Provider>
   );

@@ -15,7 +15,6 @@ export type BrewContextShape = {
   isFlipped: boolean;
   fetchBrewInProgress: () => Promise<void>;
   stopPolling: () => void;
-  clearPendingBackgroundPoll: () => void;
   toggleFlip: () => void;
   handlePause: () => Promise<void>;
   handleResume: () => Promise<void>;
