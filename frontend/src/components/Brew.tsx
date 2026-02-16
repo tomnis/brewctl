@@ -72,7 +72,7 @@ function BrewInner() {
 
   const front = (
     <div className="terminal-box terminal-glow">
-      <div className="terminal-header">
+      <div className="terminal-header terminal-row">
         <span>$ ./brewctl start</span>
       </div>
       <StartBrew />

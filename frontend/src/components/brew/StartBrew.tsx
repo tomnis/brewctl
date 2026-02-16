@@ -82,7 +82,7 @@ export default function StartBrew() {
   return (
     <Container maxW="container.xl" pt="100px">
       <form className="start-brew-form" onSubmit={handleSubmit}>
-        <label htmlFor={targetFlowRateInputId}>target_flow_rate (g/sec):</label>
+        <label className="terminal-row" htmlFor={targetFlowRateInputId}>[g/s] TARGET_FLOW_RATE:_</label>
         <Input
           value={targetFlowRate}
           onChange={(e: any) => {
@@ -101,7 +101,7 @@ export default function StartBrew() {
           </Text>
         )}
 
-        <label htmlFor={valveIntervalInputId}>valve_interval (sec):</label>
+        <label className="terminal-row" htmlFor={valveIntervalInputId}>[sec] VALVE_INTERVAL:_</label>
         <Input
           value={valveInterval}
           onChange={(e: any) => {
@@ -121,7 +121,7 @@ export default function StartBrew() {
         )}
 
 
-            <label htmlFor={targetWeightInputId}>target_weight (grams):</label>
+            <label className="terminal-row" htmlFor={targetWeightInputId}>[g] TARGET_WEIGHT:_</label>
             <Input
               value={targetWeight}
               onChange={(e: any) => {
@@ -140,7 +140,7 @@ export default function StartBrew() {
               </Text>
             )}
 
-        <label htmlFor={epsilonInputId}>epsilon (g/sec):</label>
+        <label className="terminal-row" htmlFor={epsilonInputId}>[g/s] EPSILON:_</label>
         <Input
           value={epsilon}
           onChange={(e: any) => {
