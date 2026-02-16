@@ -80,7 +80,7 @@ export default function StartBrew() {
   const epsilonInputId = useId();
 
   return (
-    <Container maxW="container.xl" pt="100px">
+    <Container maxW="container.xl">
       <form className="start-brew-form" onSubmit={handleSubmit}>
         <label className="terminal-row" htmlFor={targetFlowRateInputId}>[g/s] TARGET_FLOW_RATE:_</label>
         <Input
