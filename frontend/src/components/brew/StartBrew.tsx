@@ -159,13 +159,15 @@ export default function StartBrew() {
           </Text>
         )}
 
-        <Button
-          className="brew-button"
-          type="submit"
-          disabled={!!targetFlowError || !!valveIntervalError || !!epsilonError || !!targetWeightError}
-        >
-          start_brew
-        </Button>
+        <div className="terminal-footer">
+          <Button
+            className="brew-button"
+            type="submit"
+            disabled={!!targetFlowError || !!valveIntervalError || !!epsilonError || !!targetWeightError}
+          >
+            start_brew
+          </Button>
+        </div>
       </form>
     </Container>
   );
