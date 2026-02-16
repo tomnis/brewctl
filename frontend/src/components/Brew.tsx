@@ -97,7 +97,6 @@ function BrewInner() {
         <span className="terminal-label">TIME_STARTED:_</span>
         <span className="terminal-value">{started}</span>
       </div>
-      <div hidden="true" className="terminal-separator">+++++++________________________________________________________+++++++</div>
       <div className="terminal-separator">............_____________________________________________............</div>
       <div className="terminal-row">
         <span className="terminal-label">STATE:_</span>

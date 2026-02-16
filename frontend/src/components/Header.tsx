@@ -1,6 +1,10 @@
 import { Heading, Flex } from "@chakra-ui/react";
+import { useTheme } from "./theme/ThemeContext";
+import { themes } from "./theme/themes";
 
 const Header = () => {
+  const { themeId, setThemeId } = useTheme();
+
   return (
     <Flex
       as="nav"
@@ -8,15 +12,15 @@ const Header = () => {
       justify="space-between"
       wrap="wrap"
       padding="0.75rem 1rem"
-      bg="#0a0a0a"
-      borderBottom="2px solid #33ff33"
+      bg="var(--theme-bg-secondary)"
+      borderBottom="2px solid var(--theme-border)"
       width="100%"
       position="fixed"
       top="0"
       left="0"
       right="0"
       zIndex="1000"
-      boxShadow="0 0 10px #33ff33"
+      boxShadow="0 0 10px var(--theme-primary)"
     >
       <Flex align="center" as="nav" mr={5}>
         <Heading 
@@ -28,10 +32,22 @@ const Header = () => {
           COLDBREWER v1.0
         </Heading>
       </Flex>
-      <Flex align="center">
+      <Flex align="center" gap={4}>
         <span className="terminal-glow" style={{ fontSize: '0.9em' }}>
           [System Online]
         </span>
+        <select
+          className="theme-select"
+          value={themeId}
+          onChange={(e) => setThemeId(e.target.value)}
+          aria-label="Select theme"
+        >
+          {themes.map((theme) => (
+            <option key={theme.id} value={theme.id}>
+              {theme.name}
+            </option>
+          ))}
+        </select>
       </Flex>
     </Flex>
   );
