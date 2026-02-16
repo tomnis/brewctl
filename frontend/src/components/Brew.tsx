@@ -1,5 +1,5 @@
 // typescript
-import { Container, Stack } from "@chakra-ui/react";
+import { Button, Container, Stack } from "@chakra-ui/react";
 import { BrewProvider, useBrewContext } from "./brew/BrewProvider";
 import StartBrew from "./brew/StartBrew";
 import CancelBrew from "./brew/CancelBrew";
@@ -56,14 +56,15 @@ export default function Brew() {
 }
 
 function BrewInner() {
-  const { brewInProgress, isFlipped } = useBrewContext();
+  const { brewInProgress, isFlipped, toggleFlip } = useBrewContext();
 
   const eta = brewInProgress?.estimated_time_remaining ? parseFloat(brewInProgress.estimated_time_remaining) : null;
   const etaString = formatETA(eta);
   const remainingString = formatTimeRemaining(eta);
 
   const brewId = brewInProgress?.brew_id?.substring(0, 8) || "N/A";
-  const state = brewInProgress?.brew_state?.toUpperCase() || "UNKNOWN";
+  const brewState = brewInProgress?.brew_state || "idle";
+  const state = brewState.toUpperCase();
   const started = formatStartedTime(brewInProgress?.time_started);
   const flowRate = brewInProgress?.current_flow_rate ? parseFloat(brewInProgress.current_flow_rate).toFixed(3) + " g/s" : "N/A";
   const weight = brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + " g" : "N/A";
@@ -123,8 +124,21 @@ function BrewInner() {
       )}
       
       <div className="terminal-footer">
-        <PauseResumeButton />
-        <CancelBrew />
+        {brewState === "completed" ? (
+          <Button
+            className="brew-button"
+            h="1.5rem"
+            onClick={toggleFlip}
+            colorScheme="green"
+          >
+            ok
+          </Button>
+        ) : (
+          <>
+            <PauseResumeButton />
+            <CancelBrew />
+          </>
+        )}
       </div>
     </div>
   );

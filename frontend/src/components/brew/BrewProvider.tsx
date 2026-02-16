@@ -9,6 +9,8 @@ const BrewContext = createContext<BrewContextShape>({
   fetchBrewInProgress: async () => {},
   stopPolling: () => {},
   toggleFlip: () => {},
+  handlePause: async () => {},
+  handleResume: async () => {},
 });
 
 export const useBrewContext = () => useContext(BrewContext);

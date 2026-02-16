@@ -183,7 +183,6 @@ async def brew_step_task(brew_id, strategy):
                 if valve_command == ValveCommand.STOP:
                     logger.info(f"Target weight reached, stopping brew {brew_id}")
                     cur_brew.status = BrewState.COMPLETED
-                    cur_brew = None
                     scale.disconnect()
                     valve.return_to_start()
                     valve.release()
@@ -211,7 +210,7 @@ async def start_brew(req: StartBrewRequest | None = None):
     if scale is None or not scale.connected:
         scale = create_scale()
         scale.connect()
-    if cur_brew is None:
+    if cur_brew is None or cur_brew.status == BrewState.COMPLETED:
         new_id = str(uuid.uuid4())
         target_weight = req.target_weight if req is not None else COLDBREW_TARGET_WEIGHT_GRAMS
         cur_brew = Brew(id=new_id, status=BrewState.BREWING, time_started=datetime.now(timezone.utc), target_weight=target_weight)
