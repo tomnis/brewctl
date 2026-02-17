@@ -43,6 +43,14 @@ function formatStartedTime(timeStarted: string | undefined): string {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 }
 
+function formatProgressBar(current: number, target: number): string {
+  const percent = Math.min(100, Math.max(0, (current / target) * 100));
+  const filled = Math.round(percent / 5); // 20 chars = 5% each
+  const empty = 20 - filled;
+  const bar = "█".repeat(filled) + "░".repeat(empty);
+  return `[${bar}] ${percent.toFixed(0)}%`;
+}
+
 export default function Brew() {
   return (
     <BrewProvider>
@@ -127,6 +135,12 @@ function BrewInner() {
         <span className="terminal-label">CUR_WEIGHT:_</span>
         <span className="terminal-value">{weight}</span>
       </div>
+      {weight !== "null" && targetWeight !== "null" && (
+        <div className="terminal-row">
+          <span className="terminal-label">PROGRESS:_</span>
+          <span className="terminal-value">{formatProgressBar(parseFloat(weight), parseFloat(targetWeight))}</span>
+        </div>
+      )}
       {etaString && (
         <div className="terminal-row">
           <span className="terminal-label">ETA:_</span>
