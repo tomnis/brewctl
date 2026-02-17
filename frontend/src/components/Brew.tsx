@@ -83,13 +83,7 @@ function BrewInner() {
       <div className="terminal-header terminal-row">
         <span>$ ./brewctl start</span>
       </div>
-      {isError ? (
-        <div className="terminal-row error-glow" style={{ color: "#ff6b6b", padding: "1rem" }}>
-          <span>ERROR: {errorMessage}</span>
-        </div>
-      ) : (
-        <StartBrew />
-      )}
+      <StartBrew />
     </div>
   );
 
@@ -116,6 +110,14 @@ function BrewInner() {
         <span className="terminal-label">STATE:_</span>
         <span className="terminal-value">{state}</span>
       </div>
+      {isError ? (
+        <div className="terminal-row error-glow" style={{ color: "#ff6b6b", padding: "1rem" }}>
+        MESSAGE:_ {errorMessage}
+        </div>
+      ) : (
+          <div></div>
+
+      )}
       <div className="terminal-row">
         <span className="terminal-label">CUR_FLOW_RATE:_</span>
         <span className="terminal-value">{flowRate}</span>

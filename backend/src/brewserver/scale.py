@@ -93,7 +93,8 @@ class MockScale(AbstractScale):
 
     def get_weight(self) -> float:
         """Get the current weight in grams from the scale."""
-        return self._weight
+        #return self._weight
+        raise Exception("mock scale error")
 
     def get_units(self) -> str:
         return self._units
