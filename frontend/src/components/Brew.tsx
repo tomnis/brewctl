@@ -75,12 +75,21 @@ function BrewInner() {
   const weight = brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + " g" : "N/A";
   const targetWeight = brewInProgress?.target_weight ? parseFloat(brewInProgress.target_weight).toFixed(1) + " g" : "N/A";
 
+  const isError = brewState === "error";
+  const errorMessage = brewInProgress?.error_message || "Unknown error";
+
   const front = (
     <div className="terminal-box terminal-glow">
       <div className="terminal-header terminal-row">
         <span>$ ./brewctl start</span>
       </div>
-      <StartBrew />
+      {isError ? (
+        <div className="terminal-row error-glow" style={{ color: "#ff6b6b", padding: "1rem" }}>
+          <span>ERROR: {errorMessage}</span>
+        </div>
+      ) : (
+        <StartBrew />
+      )}
     </div>
   );
 

@@ -1,4 +1,4 @@
-export type BrewState = "brewing" | "paused" | "completed" | "idle";
+export type BrewState = "brewing" | "paused" | "completed" | "idle" | "error";
 
 export interface BrewInProgress {
   brew_id: string;
@@ -9,6 +9,7 @@ export interface BrewInProgress {
   time_started: string;
   time_completed: string | null;
   estimated_time_remaining: string | null;
+  error_message: string | null;
 }
 
 export type BrewContextShape = {

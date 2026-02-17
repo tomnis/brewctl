@@ -13,6 +13,7 @@ class BrewState(str, Enum):
     BREWING = "brewing"
     PAUSED = "paused"
     COMPLETED = "completed"
+    ERROR = "error"
 
 
 class ValveCommand(Enum):
@@ -36,6 +37,7 @@ class Brew:
     time_started: datetime
     target_weight: float
     time_completed: Optional[datetime] = None
+    error_message: Optional[str] = None
 
 @dataclass
 class StartBrewRequest(BaseModel):
@@ -59,3 +61,4 @@ class BrewStatus(BaseModel):
     current_flow_rate: Optional[float] = None
     current_weight: Optional[float] = None
     estimated_time_remaining: Optional[float] = None
+    error_message: Optional[str] = None

@@ -164,6 +164,9 @@ async def collect_scale_data_task(brew_id, s):
             await asyncio.sleep(s)
         except Exception as e:
             logger.error(f"Error collecting scale data: {e}")
+            if cur_brew is not None:
+                cur_brew.status = BrewState.ERROR
+                cur_brew.error_message = str(e)
             await asyncio.sleep(s)
 
 
@@ -197,7 +200,10 @@ async def brew_step_task(brew_id, strategy):
                 # When paused, just sleep and check again
                 await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Error collecting valve: {e}")
+            logger.error(f"Error in brew step: {e}")
+            if cur_brew is not None:
+                cur_brew.status = BrewState.ERROR
+                cur_brew.error_message = str(e)
             await asyncio.sleep(strategy.valve_interval)
 
 
@@ -211,7 +217,7 @@ async def start_brew(req: StartBrewRequest | None = None):
     if scale is None or not scale.connected:
         scale = create_scale()
         scale.connect()
-    if cur_brew is None or cur_brew.status == BrewState.COMPLETED:
+    if cur_brew is None or cur_brew.status == BrewState.COMPLETED or cur_brew.status == BrewState.ERROR:
         new_id = str(uuid.uuid4())
         target_weight = req.target_weight if req is not None else COLDBREW_TARGET_WEIGHT_GRAMS
         cur_brew = Brew(id=new_id, status=BrewState.BREWING, time_started=datetime.now(timezone.utc), target_weight=target_weight)
@@ -254,6 +260,21 @@ async def brew_status():
             current_flow_rate=None,
             current_weight=None,
             estimated_time_remaining=0.0
+        )
+        return res.model_dump()
+    elif cur_brew.status == BrewState.ERROR:
+        timestamp = datetime.now(timezone.utc)
+        res = BrewStatus(
+            brew_id=cur_brew.id,
+            brew_state=cur_brew.status,
+            time_started=cur_brew.time_started,
+            time_completed=None,
+            target_weight=cur_brew.target_weight,
+            timestamp=timestamp,
+            current_flow_rate=None,
+            current_weight=None,
+            estimated_time_remaining=None,
+            error_message=cur_brew.error_message
         )
         return res.model_dump()
     else:
