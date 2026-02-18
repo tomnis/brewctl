@@ -49,15 +49,15 @@ export const themes: Theme[] = [
     },
   },
   {
-    name: "Pink Neon",
+    name: "Tokyo Cyberpunk",
     id: "pink",
     colors: {
-      primary: "#ff00ff",
-      primaryGlow: "#ff00ff",
-      bg: "#1a001a",
-      bgSecondary: "#0f000f",
-      border: "#ff00ff",
-      inputPlaceholder: "#4d004d",
+      primary: "#9d00ff",
+      primaryGlow: "#00fff7",
+      bg: "#0a0612",
+      bgSecondary: "#050208",
+      border: "#00fff7",
+      inputPlaceholder: "#2d1a3d",
     },
   },
   {
