@@ -66,26 +66,38 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         query_api = self.influxdb.query_api()
         query = f'import "experimental/aggregate"\
         from(bucket: "{self.bucket}")\
-          |> range(start: -2m)\
+          |> range(start: -3m)\
           |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")\
           |> aggregate.rate(every: 1m, unit: 1s)'
         tables = query_api.query(org=self.org, query=query)
+        
+        # Filter to only include complete 1-minute intervals (window duration >= 55 seconds)
+        # This excludes the last partial interval which causes noisy readings
+        complete_records = []
         for table in tables:
-            for record in table.records:
+            for i, record in enumerate(table.records):
+                if i == 0:
+                    continue  # Skip first record as we need a previous record to compare
+                prev_record = table.records[i - 1]
+                current_time = record.get_time()
+                prev_time = prev_record.get_time()
+                window_duration = (current_time - prev_time).total_seconds()
+                
                 value = record.get_value()
                 if value is None:
                     value = 0.0
-
-                logger.info(f"Time: {record.get_time()}, Value: {value:.4f}")
-
-        # TODO it does actually seem better to take the last value here
-        # even though its noisy and not necessarily representative of the full period
-        # TODO handle empty case
-        # TODO consider calculating the mean here
-        if tables is None or len(tables) == 0:
+                
+                logger.info(f"Time: {current_time}, Value: {value:.4f}, Window: {window_duration:.1f}s")
+                
+                # Only include records where the window is at least 55 seconds (allowing some tolerance)
+                if window_duration >= 55:
+                    complete_records.append(record)
+        
+        # Handle empty case
+        if not complete_records:
+            logger.warning("No complete flow rate intervals found")
             return None
-        result = tables[-1].records[-1]
-        if result is None:
-            return None
-        else:
-            return result.get_value()
+        
+        # Return the last complete interval (most recent full minute)
+        result = complete_records[-1]
+        return result.get_value()
