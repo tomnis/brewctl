@@ -17,3 +17,4 @@ requests==2.32.5
 fastapi[standard]==0.128.0
 fastapi-cli==0.0.20
 pytest==9.0.2
+websockets==14.1

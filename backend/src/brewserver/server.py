@@ -1,13 +1,50 @@
 import asyncio
 import uuid
 import time
+import os
 
 from contextlib import asynccontextmanager
 from log import logger
-from fastapi import FastAPI, Query, HTTPException, status
+from fastapi import FastAPI, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+
+class ConnectionManager:
+    """Manages WebSocket connections for broadcasting brew status."""
+    
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"WebSocket client connected. Total connections: {len(self.active_connections)}")
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+        logger.info(f"WebSocket client disconnected. Total connections: {len(self.active_connections)}")
+    
+    async def broadcast(self, message: dict):
+        """Broadcast a message to all connected clients."""
+        # Create a copy to avoid modification during iteration
+        connections = self.active_connections.copy()
+        for connection in connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.error(f"Error sending to WebSocket client: {e}")
+                self.disconnect(connection)
+
+
+# Global connection manager
+ws_manager = ConnectionManager()
+
+# WebSocket push interval in seconds
+WS_PUSH_INTERVAL = float(os.getenv("WS_PUSH_INTERVAL", "1.0"))
+logger.info(f"WS_PUSH_INTERVAL = {WS_PUSH_INTERVAL}")
+
 
 from pydantic import field_validator
 from typing import Annotated
@@ -308,6 +345,41 @@ async def brew_status():
             res_dict = res.model_dump()
             return res_dict
         return res
+
+
+def serialize_status(status: dict) -> dict:
+    """Convert datetime objects to ISO format strings for JSON serialization."""
+    if status is None:
+        return status
+    result = {}
+    for key, value in status.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        else:
+            result[key] = value
+    return result
+
+
+@app.websocket("/ws/brew/status")
+async def websocket_brew_status(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time brew status updates.
+    Clients connect and receive periodic brew status broadcasts.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Get current brew status
+            status = await brew_status()
+            # Serialize datetime fields for JSON
+            serialized = serialize_status(status)
+            await websocket.send_json(serialized)
+            await asyncio.sleep(WS_PUSH_INTERVAL)
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
 
 
 @app.post("/api/brew/pause")
