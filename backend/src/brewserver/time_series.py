@@ -6,6 +6,7 @@ from log import logger
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from retry import retry
+from config import COLDBREW_VALVE_INTERVAL_SECONDS
 
 
 class AbstractTimeSeries(ABC):
@@ -30,12 +31,12 @@ class AbstractTimeSeries(ABC):
         """Get the flow rate from readings since the given start time."""
         pass
 
-    def get_recent_weight_readings(self, duration_minutes: int = 3) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = COLDBREW_VALVE_INTERVAL_SECONDS) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
         
         Args:
-            duration_minutes: How many minutes of history to query
+            duration_seconds: How many seconds of history to query
             
         Returns:
             List of (timestamp, weight) tuples sorted by time ascending
@@ -80,19 +81,19 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         return result.get_value()
 
     @retry(tries=10, delay=4)
-    def get_recent_weight_readings(self, duration_minutes: int = 3) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = COLDBREW_VALVE_INTERVAL_SECONDS) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
         
         Args:
-            duration_minutes: How many minutes of history to query
+            duration_seconds: How many seconds of history to query
             
         Returns:
             List of (timestamp, weight) tuples sorted by time ascending
         """
         query_api = self.influxdb.query_api()
         query = f'from(bucket: "{self.bucket}")\
-            |> range(start: -{duration_minutes}m)\
+            |> range(start: -{duration_seconds}s)\
             |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")'
         tables = query_api.query(org=self.org, query=query)
         
@@ -106,7 +107,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         
         # Sort by timestamp ascending
         readings.sort(key=lambda x: x[0])
-        logger.info(f"Retrieved {len(readings)} weight readings from the last {duration_minutes} minutes")
+        # logger.info(f"Retrieved {len(readings)} weight readings from the last {duration_seconds} seconds")
         return readings
 
     def calculate_flow_rate_from_derivatives(
@@ -126,8 +127,8 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
             logger.warning("Insufficient readings for derivative calculation")
             return None
         
-        # Calculate derivative between the last two readings
-        prev_time, prev_weight = readings[-2]
+        # Calculate derivative between the first and last readings
+        prev_time, prev_weight = readings[0]
         curr_time, curr_weight = readings[-1]
         
         time_diff = (curr_time - prev_time).total_seconds()
@@ -139,7 +140,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         weight_diff = curr_weight - prev_weight
         rate = weight_diff / time_diff
         
-        logger.info(f"Calculated flow rate: {weight_diff:.2f}g over {time_diff:.1f}s = {rate:.4f} g/s")
+        # logger.info(f"Calculated flow rate: {weight_diff:.2f}g over {time_diff:.1f}s = {rate:.4f} g/s")
         return rate
 
     @retry(tries=10, delay=4)
@@ -151,8 +152,8 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         the derivative (rate of change) in Python, rather than using InfluxDB's
         built-in aggregate.rate() function.
         """
-        # Read raw sequential weight values
-        readings = self.get_recent_weight_readings(duration_minutes=3)
+        # Read raw sequential weight values (aligned with VALVE_INTERVAL)
+        readings = self.get_recent_weight_readings(duration_seconds=COLDBREW_VALVE_INTERVAL_SECONDS)
         
         if not readings:
             logger.warning("No weight readings available for flow rate calculation")
@@ -198,7 +199,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
             logger.warning(f"No weight readings found since {start_time}")
             return None
         
-        logger.info(f"Retrieved {len(readings)} weight readings since {start_time}")
+        # logger.info(f"Retrieved {len(readings)} weight readings since {start_time}")
         
         # Calculate flow rate from derivatives
         return self.calculate_flow_rate_from_derivatives(readings)
