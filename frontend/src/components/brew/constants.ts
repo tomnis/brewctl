@@ -1,4 +1,13 @@
-export const apiUrl = (import.meta.env.COLDBREW_FRONTEND_API_URL as string) || "http://localhost:8000/api";
+// Derive WebSocket URL from API URL (replace /api with empty string, change http to ws)
+const getApiUrl = () => import.meta.env.COLDBREW_FRONTEND_API_URL as string || "http://localhost:8000/api";
+export const apiUrl = getApiUrl();
+
+// WebSocket URL for real-time brew status updates
+export const wsUrl = () => {
+  const api = getApiUrl();
+  return api.replace('/api', '').replace('http://', 'ws://').replace('https://', 'wss://');
+};
+
 export const DEFAULT_FLOW = "0.05";
 export const DEFAULT_VALVE_INTERVAL = "90";
 export const DEFAULT_EPSILON = "0.008";

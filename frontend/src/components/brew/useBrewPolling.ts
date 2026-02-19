@@ -1,76 +1,99 @@
-import { useRef, useState, useCallback } from "react";
-import { apiUrl } from "./constants";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { wsUrl } from "./constants";
 import { BrewInProgress } from "./types";
-import { POLL_INTERVAL_MS } from "./constants";
+
+// Reconnection delay settings
+const RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30000;
 
 export function useBrewPolling() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
 
-  const pollRef = useRef<{ 
-    active: boolean; 
-    timeoutId: number | null; 
-    controller: AbortController | null;
-  }>(
-    { active: false, timeoutId: null, controller: null }
-  );
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttempts = useRef(0);
 
-  const fetchBrewInProgress = useCallback(async () => {
-    if (pollRef.current.controller) {
-      try { pollRef.current.controller.abort(); } catch {}
+  const connect = useCallback(() => {
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
-    const controller = new AbortController();
-    pollRef.current.controller = controller;
-    try {
-      const response = await fetch(`${apiUrl}/brew/status`, { signal: controller.signal });
-      if (!response.ok) return;
-      const data = await response.json();
-      setBrewInProgress(data);
-    } catch (e) {
-      if ((e as any).name !== "AbortError") console.error("fetch error", e);
-    } finally {
-      pollRef.current.controller = null;
-    }
+
+    const ws = new WebSocket(`${wsUrl()}/ws/brew/status`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      reconnectAttempts.current = 0;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setBrewInProgress(data);
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+      wsRef.current = null;
+      
+      // Attempt to reconnect with exponential backoff
+      const delay = Math.min(
+        RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts.current),
+        MAX_RECONNECT_DELAY_MS
+      );
+      reconnectAttempts.current += 1;
+      
+      console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current})`);
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        connect();
+      }, delay);
+    };
   }, []);
 
-  const backgroundRefreshBrewInProgress = useCallback(async () => {
-    if (pollRef.current.controller) {
-      try { pollRef.current.controller.abort(); } catch {}
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-    const controller = new AbortController();
-    pollRef.current.controller = controller;
-    try {
-      const response = await fetch(`${apiUrl}/brew/status`, { signal: controller.signal });
-      if (!response.ok) return;
-      const data = await response.json();
-      setBrewInProgress(data);
-    } catch (e) {
-      if ((e as any).name !== "AbortError") console.error("fetch error", e);
-    } finally {
-      pollRef.current.controller = null;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
-    
-    if (!pollRef.current.active) return;
-    const id = window.setTimeout(() => backgroundRefreshBrewInProgress(), POLL_INTERVAL_MS);
-    pollRef.current.timeoutId = id;
+    reconnectAttempts.current = 0;
   }, []);
 
   const startPolling = useCallback(() => {
-    if (pollRef.current.active) return;
-    pollRef.current.active = true;
-    backgroundRefreshBrewInProgress();
-  }, [backgroundRefreshBrewInProgress]);
+    connect();
+  }, [connect]);
 
   const stopPolling = useCallback(() => {
-    pollRef.current.active = false;
-    if (pollRef.current.timeoutId != null) {
-      clearTimeout(pollRef.current.timeoutId);
-      pollRef.current.timeoutId = null;
+    disconnect();
+    setBrewInProgress(null);
+  }, [disconnect]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnect();
+    };
+  }, [disconnect]);
+
+  // fetchBrewInProgress is no longer needed with WebSocket - the connection handles it
+  const fetchBrewInProgress = useCallback(async () => {
+    // With WebSocket, we just ensure we're connected
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      connect();
     }
-    if (pollRef.current.controller) {
-      try { pollRef.current.controller.abort(); } catch {}
-      pollRef.current.controller = null;
-    }
-  }, []);
+  }, [connect]);
 
   return { brewInProgress, fetchBrewInProgress, startPolling, stopPolling };
 }
