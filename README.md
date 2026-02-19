@@ -283,7 +283,7 @@ make build-prod-image
 | `COLDBREW_TARGET_FLOW_RATE` | `0.05` | Target flow rate (g/s) |
 | `COLDBREW_TARGET_WEIGHT_GRAMS` | `1337` | Target brew weight (g) |
 | `COLDBREW_EPSILON` | `0.008` | Flow rate tolerance |
-| `COLDBREW_VALVE_INTERVAL_SECONDS` | `60` | Valve check interval |
+| `COLDBREW_VALVE_INTERVAL_SECONDS` | `90` | Valve check interval |
 | `COLDBREW_SCALE_READ_INTERVAL` | `0.5` | Scale polling interval |
 
 ---
