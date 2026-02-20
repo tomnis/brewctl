@@ -10,6 +10,7 @@ export interface BrewInProgress {
   time_completed: string | null;
   estimated_time_remaining: string | null;
   error_message: string | null;
+  valve_position: number | null;  // 0-199 for one full rotation
 }
 
 export type BrewContextShape = {

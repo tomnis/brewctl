@@ -303,7 +303,8 @@ async def brew_status():
             timestamp=timestamp,
             current_flow_rate=None,
             current_weight=None,
-            estimated_time_remaining=0.0
+            estimated_time_remaining=0.0,
+            valve_position=None  # Valve returns to start on completion
         )
         return res.model_dump()
     elif cur_brew.status == BrewState.ERROR:
@@ -318,7 +319,8 @@ async def brew_status():
             current_flow_rate=None,
             current_weight=None,
             estimated_time_remaining=None,
-            error_message=cur_brew.error_message
+            error_message=cur_brew.error_message,
+            valve_position=valve.get_position()
         )
         return res.model_dump()
     else:
@@ -344,7 +346,7 @@ async def brew_status():
             else:
                 estimated_time_remaining = remaining_weight / current_flow_rate
             
-            res = BrewStatus(brew_id=cur_brew.id, brew_state=cur_brew.status, time_started=cur_brew.time_started, target_weight=cur_brew.target_weight, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight, estimated_time_remaining=estimated_time_remaining)
+            res = BrewStatus(brew_id=cur_brew.id, brew_state=cur_brew.status, time_started=cur_brew.time_started, target_weight=cur_brew.target_weight, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight, estimated_time_remaining=estimated_time_remaining, valve_position=valve.get_position())
             # Add brew_state to the response
             res_dict = res.model_dump()
             return res_dict

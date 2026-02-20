@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 
+# Steps per full revolution
+STEPS_PER_REVOLUTION = 200
+
 class AbstractValve(ABC):
 
     @abstractmethod
@@ -20,6 +23,11 @@ class AbstractValve(ABC):
     @abstractmethod
     def return_to_start(self):
         """Return the valve to the starting position."""
+
+    @abstractmethod
+    def get_position(self) -> int:
+        """Get current absolute position (0-199 for one full rotation)."""
+        pass
 
 from log import logger
 
@@ -44,3 +52,7 @@ class MockValve(AbstractValve):
     def return_to_start(self):
         self.position = 0
         logger.info("[Mock] Valve returns to start.")
+
+    def get_position(self) -> int:
+        """Get current absolute position (0-199 for one full rotation)."""
+        return self.position % STEPS_PER_REVOLUTION

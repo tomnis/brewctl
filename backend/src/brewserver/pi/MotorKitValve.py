@@ -2,7 +2,7 @@ import time
 
 from adafruit_motorkit import MotorKit
 from adafruit_motor import stepper
-from valve import AbstractValve
+from valve import AbstractValve, STEPS_PER_REVOLUTION
 
 
 def flip_direction(direction):
@@ -79,3 +79,14 @@ class MotorKitValve(AbstractValve):
 
     def release(self):
         self.motor.release()
+
+    def get_position(self) -> int:
+        """Get current absolute position (0-199 for one full rotation).
+        
+        Calculates net position from breadcrumbs: forward steps minus backward steps,
+        then takes modulo 200 for absolute position within one revolution.
+        """
+        forward_count = self.breadcrumbs.get(stepper.FORWARD, 0)
+        backward_count = self.breadcrumbs.get(stepper.BACKWARD, 0)
+        net_position = forward_count - backward_count
+        return abs(net_position) % STEPS_PER_REVOLUTION

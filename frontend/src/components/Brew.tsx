@@ -1,10 +1,11 @@
 // typescript
-import { Button, Container, Stack } from "@chakra-ui/react";
+import { Button, Container, Stack, HStack } from "@chakra-ui/react";
 import { BrewProvider, useBrewContext } from "./brew/BrewProvider";
 import StartBrew from "./brew/StartBrew";
 import CancelBrew from "./brew/CancelBrew";
 import PauseResumeButton from "./brew/PauseResumeButton";
 import FlipCard from "./brew/FlipCard";
+import { ValveGauge } from "./brew/ValveGauge";
 
 function formatTimeRemaining(seconds: number | null): string {
   if (seconds === null || seconds < 0) return "null";
@@ -86,6 +87,10 @@ function BrewInner() {
   const isError = brewState === "error";
   const errorMessage = brewInProgress?.error_message || "Unknown error";
 
+  // Determine if brew is active (brewing or paused)
+  const isActive = brewState === "brewing" || brewState === "paused";
+  const valvePosition = brewInProgress?.valve_position ?? null;
+
   const front = (
     <div className="terminal-box terminal-glow">
       <div className="terminal-header terminal-row">
@@ -151,6 +156,13 @@ function BrewInner() {
         <div className="terminal-row">
           <span className="terminal-label">TIME_REMAINING:_</span>
           <span className="terminal-value">{remainingString}</span>
+        </div>
+      )}
+      
+      {/* Valve Position Gauge - only shown when brewing or paused */}
+      {isActive && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+          <ValveGauge position={valvePosition} isActive={isActive} />
         </div>
       )}
       

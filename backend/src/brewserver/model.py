@@ -64,3 +64,4 @@ class BrewStatus(BaseModel):
     current_weight: Optional[float] = None
     estimated_time_remaining: Optional[float] = None
     error_message: Optional[str] = None
+    valve_position: Optional[int] = None  # 0-199 for one full rotation
