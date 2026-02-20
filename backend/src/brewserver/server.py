@@ -51,7 +51,7 @@ from typing import Annotated
 
 # from config import *
 from scale import AbstractScale
-from brew_strategy import DefaultBrewStrategy
+from brew_strategy import create_brew_strategy, BREW_STRATEGY_REGISTRY
 from model import *
 from model import Brew, BrewState
 from valve import AbstractValve
@@ -250,6 +250,29 @@ async def brew_step_task(brew_id, strategy):
             await asyncio.sleep(strategy.valve_interval)
 
 
+def _build_base_params(req: StartBrewRequest) -> dict:
+    """Build base parameters dict from request."""
+    return {
+        "target_flow_rate": req.target_flow_rate,
+        "scale_interval": req.scale_interval,
+        "valve_interval": req.valve_interval,
+        "target_weight": req.target_weight,
+        "vessel_weight": req.vessel_weight,
+        "epsilon": req.epsilon,
+    }
+
+
+def _get_default_base_params() -> dict:
+    """Get default base parameters from config."""
+    return {
+        "target_flow_rate": COLDBREW_TARGET_FLOW_RATE,
+        "scale_interval": COLDBREW_SCALE_READ_INTERVAL,
+        "valve_interval": COLDBREW_VALVE_INTERVAL_SECONDS,
+        "target_weight": COLDBREW_TARGET_WEIGHT_GRAMS,
+        "vessel_weight": COLDBREW_VESSEL_WEIGHT_GRAMS,
+        "epsilon": COLDBREW_EPSILON,
+    }
+
 
 @app.post("/api/brew/start")
 async def start_brew(req: StartBrewRequest | None = None):
@@ -262,15 +285,22 @@ async def start_brew(req: StartBrewRequest | None = None):
         scale.connect()
     if cur_brew is None or cur_brew.status == BrewState.COMPLETED or cur_brew.status == BrewState.ERROR:
         new_id = str(uuid.uuid4())
-        target_weight = req.target_weight if req is not None else COLDBREW_TARGET_WEIGHT_GRAMS
-        vessel_weight = req.vessel_weight if req is not None else COLDBREW_VESSEL_WEIGHT_GRAMS
-        cur_brew = Brew(id=new_id, status=BrewState.BREWING, time_started=datetime.now(timezone.utc), target_weight=target_weight, vessel_weight=vessel_weight)
+        
+        # Use defaults from config if request is None
         if req is None:
-            strategy = DefaultBrewStrategy()
+            # Build params with config defaults
+            base_params = _get_default_base_params()
+            strategy = create_brew_strategy(BrewStrategyType.DEFAULT, {}, base_params)
+            target_weight = base_params["target_weight"]
+            vessel_weight = base_params["vessel_weight"]
         else:
-            strategy = DefaultBrewStrategy.from_request(req)
-
-        # logger.info(f"strategy: {str(strategy)}")
+            target_weight = req.target_weight
+            vessel_weight = req.vessel_weight
+            base_params = _build_base_params(req)
+            strategy = create_brew_strategy(req.strategy, req.strategy_params, base_params)
+            logger.info(f"Created strategy: {req.strategy} with params: {req.strategy_params}")
+        
+        cur_brew = Brew(id=new_id, status=BrewState.BREWING, time_started=datetime.now(timezone.utc), target_weight=target_weight, vessel_weight=vessel_weight)
 
         # start scale read and brew tasks
         asyncio.create_task(collect_scale_data_task(cur_brew.id, COLDBREW_SCALE_READ_INTERVAL))

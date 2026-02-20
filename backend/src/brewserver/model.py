@@ -5,7 +5,13 @@ from config import *
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
+
+
+class BrewStrategyType(str, Enum):
+    DEFAULT = "default"
+    PID = "pid"
+    KALMAN_PID = "kalman_pid"
 
 
 class BrewState(str, Enum):
@@ -40,6 +46,7 @@ class Brew:
     time_completed: Optional[datetime] = None
     error_message: Optional[str] = None
 
+
 @dataclass
 class StartBrewRequest(BaseModel):
     target_flow_rate: float = COLDBREW_TARGET_FLOW_RATE
@@ -48,7 +55,9 @@ class StartBrewRequest(BaseModel):
     target_weight: float = COLDBREW_TARGET_WEIGHT_GRAMS
     vessel_weight: float = COLDBREW_VESSEL_WEIGHT_GRAMS
     epsilon: float = COLDBREW_EPSILON
-    # TODO strategy: str
+    strategy: BrewStrategyType = BrewStrategyType.DEFAULT
+    strategy_params: Dict[str, Any] = {}
+
 
 # TODO add startbrewresponse
 
