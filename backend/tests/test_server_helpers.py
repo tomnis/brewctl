@@ -96,7 +96,7 @@ class TestConnectionManager:
 
     def test_initial_state(self):
         cm = ConnectionManager()
-        assert cm.active_connections == []
+        assert cm.active_connections == {}
 
     @pytest.mark.anyio
     async def test_connect_adds_websocket(self):

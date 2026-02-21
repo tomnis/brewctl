@@ -2,7 +2,10 @@
 Tests for WebSocket endpoints.
 """
 import pytest
+import asyncio
 from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
+import time
 
 
 def test_websocket_connection_no_brew(client):
@@ -102,3 +105,81 @@ def test_websocket_no_brew_in_progress(client):
         # Should show no brew in progress
         assert data.get("status") == "no brew in progress"
         assert data.get("brew_state") == "idle"
+
+
+def test_websocket_heartbeat_configuration():
+    """Test that heartbeat configuration is loaded from environment or defaults."""
+    from brewserver.server import WS_HEARTBEAT_INTERVAL, WS_PONG_TIMEOUT
+    
+    # Check defaults are reasonable
+    assert WS_HEARTBEAT_INTERVAL > 0
+    assert WS_PONG_TIMEOUT > 0
+    assert WS_PONG_TIMEOUT < WS_HEARTBEAT_INTERVAL
+
+
+def test_connection_manager_tracks_metadata():
+    """Test that ConnectionManager tracks connection metadata for heartbeat."""
+    from brewserver.server import ConnectionManager
+    import asyncio
+    
+    # Create manager and verify initial state
+    manager = ConnectionManager()
+    assert len(manager.get_connections()) == 0
+    
+    # Check stale connections returns empty list initially
+    stale = manager.check_stale_connections()
+    assert len(stale) == 0
+
+
+def test_connection_manager_handles_pong():
+    """Test that ConnectionManager properly handles pong responses."""
+    from brewserver.server import ConnectionManager
+    from fastapi import WebSocket
+    from unittest.mock import MagicMock
+    
+    manager = ConnectionManager()
+    
+    # Create a mock websocket
+    mock_ws = MagicMock(spec=WebSocket)
+    
+    # Simulate connection with metadata
+    asyncio.run(manager.connect(mock_ws))
+    
+    # Verify connection tracked with metadata
+    assert len(manager.get_connections()) == 1
+    
+    # Verify handle_pong doesn't error
+    manager.handle_pong(mock_ws)
+    
+    # Verify pong was processed (awaiting_pong should be False)
+    assert manager.active_connections[mock_ws]["awaiting_pong"] == False
+    
+    # Cleanup
+    manager.disconnect(mock_ws)
+
+
+def test_connection_manager_stale_detection():
+    """Test that ConnectionManager detects stale connections."""
+    from brewserver.server import ConnectionManager, WS_PONG_TIMEOUT
+    from fastapi import WebSocket
+    from unittest.mock import MagicMock
+    import time
+    
+    manager = ConnectionManager()
+    
+    # Create a mock websocket
+    mock_ws = MagicMock(spec=WebSocket)
+    
+    # Manually add connection with old timestamp (simulating waiting for pong)
+    manager.active_connections[mock_ws] = {
+        "last_ping": time.time() - WS_PONG_TIMEOUT - 1,  # Past timeout
+        "awaiting_pong": True
+    }
+    
+    # Check stale connections
+    stale = manager.check_stale_connections()
+    assert len(stale) == 1
+    assert mock_ws in stale
+    
+    # Cleanup
+    manager.disconnect(mock_ws)

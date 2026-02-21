@@ -11,6 +11,8 @@ import {
   DEFAULT_STRATEGY,
   pauseBrew,
   resumeBrew,
+  nudgeOpen,
+  nudgeClose,
   type StrategyType,
   type Strategy,
 } from './constants';
@@ -236,6 +238,78 @@ describe('API Functions', () => {
       });
 
       await expect(resumeBrew()).rejects.toThrow('Failed to resume brew');
+    });
+  });
+
+  describe('nudgeOpen', () => {
+    it('should call the correct endpoint', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        statusText: 'OK',
+      });
+
+      await nudgeOpen();
+      
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/brew/nudge/open'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should throw error when response is not ok', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        statusText: 'Internal Server Error',
+      });
+
+      await expect(nudgeOpen()).rejects.toThrow('Failed to nudge open');
+    });
+
+    it('should throw rate limit error when status is 429', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+      });
+
+      await expect(nudgeOpen()).rejects.toThrow('Nudge too frequent, please wait');
+    });
+  });
+
+  describe('nudgeClose', () => {
+    it('should call the correct endpoint', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        statusText: 'OK',
+      });
+
+      await nudgeClose();
+      
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/brew/nudge/close'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should throw error when response is not ok', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        statusText: 'Internal Server Error',
+      });
+
+      await expect(nudgeClose()).rejects.toThrow('Failed to nudge close');
+    });
+
+    it('should throw rate limit error when status is 429', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+      });
+
+      await expect(nudgeClose()).rejects.toThrow('Nudge too frequent, please wait');
     });
   });
 });

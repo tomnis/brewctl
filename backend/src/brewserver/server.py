@@ -14,24 +14,59 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 class ConnectionManager:
-    """Manages WebSocket connections for broadcasting brew status."""
+    """Manages WebSocket connections for broadcasting brew status with heartbeat support."""
     
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        # Track connections with metadata: {websocket: {"last_ping": timestamp, "awaiting_pong": bool}}
+        self.active_connections: dict[WebSocket, dict] = {}
     
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections[websocket] = {
+            "last_ping": time.time(),
+            "awaiting_pong": False
+        }
         logger.info(f"WebSocket client connected. Total connections: {len(self.active_connections)}")
     
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-        logger.info(f"WebSocket client disconnected. Total connections: {len(self.active_connections)}")
+        if websocket in self.active_connections:
+            del self.active_connections[websocket]
+            logger.info(f"WebSocket client disconnected. Total connections: {len(self.active_connections)}")
+    
+    async def send_ping(self, websocket: WebSocket):
+        """Send a ping frame to a client and mark as awaiting pong."""
+        if websocket in self.active_connections:
+            try:
+                await websocket.send_text("ping")
+                self.active_connections[websocket]["last_ping"] = time.time()
+                self.active_connections[websocket]["awaiting_pong"] = True
+            except Exception as e:
+                logger.error(f"Error sending ping to WebSocket client: {e}")
+                self.disconnect(websocket)
+    
+    def handle_pong(self, websocket: WebSocket):
+        """Handle pong response from client."""
+        if websocket in self.active_connections:
+            self.active_connections[websocket]["awaiting_pong"] = False
+    
+    def check_stale_connections(self) -> list[WebSocket]:
+        """Check for connections that haven't responded to pings within the timeout."""
+        stale = []
+        current_time = time.time()
+        for ws, data in self.active_connections.items():
+            if data.get("awaiting_pong"):
+                if current_time - data["last_ping"] > WS_PONG_TIMEOUT:
+                    stale.append(ws)
+        return stale
+    
+    def get_connections(self) -> list[WebSocket]:
+        """Return list of active connections."""
+        return list(self.active_connections.keys())
     
     async def broadcast(self, message: dict):
         """Broadcast a message to all connected clients."""
         # Create a copy to avoid modification during iteration
-        connections = self.active_connections.copy()
+        connections = self.get_connections()
         for connection in connections:
             try:
                 await connection.send_json(message)
@@ -46,6 +81,12 @@ ws_manager = ConnectionManager()
 # WebSocket push interval in seconds
 WS_PUSH_INTERVAL = float(os.getenv("WS_PUSH_INTERVAL", "1.0"))
 logger.info(f"WS_PUSH_INTERVAL = {WS_PUSH_INTERVAL}")
+
+# WebSocket heartbeat configuration
+WS_HEARTBEAT_INTERVAL = float(os.getenv("WS_HEARTBEAT_INTERVAL", "30.0"))  # seconds between ping frames
+WS_PONG_TIMEOUT = float(os.getenv("WS_PONG_TIMEOUT", "10.0"))  # seconds to wait for pong before disconnecting
+logger.info(f"WS_HEARTBEAT_INTERVAL = {WS_HEARTBEAT_INTERVAL}")
+logger.info(f"WS_PONG_TIMEOUT = {WS_PONG_TIMEOUT}")
 
 
 from pydantic import field_validator
@@ -623,15 +664,42 @@ async def websocket_brew_status(websocket: WebSocket):
     """
     WebSocket endpoint for real-time brew status updates.
     Clients connect and receive periodic brew status broadcasts.
+    Includes heartbeat/ping-pong to detect stale connections.
     """
     await ws_manager.connect(websocket)
+    last_heartbeat = time.time()
+    
     try:
         while True:
-            # Get current brew status
+            current_time = time.time()
+            
+            # Check for incoming messages (pong responses from client)
+            try:
+                # Use a short timeout to check for incoming messages without blocking
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
+                if message == "pong":
+                    ws_manager.handle_pong(websocket)
+            except asyncio.TimeoutError:
+                pass  # No message received
+            except Exception:
+                pass  # Client disconnected or error
+            
+            # Send ping at heartbeat interval
+            if current_time - last_heartbeat >= WS_HEARTBEAT_INTERVAL:
+                await ws_manager.send_ping(websocket)
+                last_heartbeat = current_time
+                
+                # Check for stale connections that haven't responded
+                stale = ws_manager.check_stale_connections()
+                for stale_ws in stale:
+                    logger.warning(f"Closing stale WebSocket connection")
+                    ws_manager.disconnect(stale_ws)
+            
+            # Send status update
             status = await brew_status()
-            # Serialize datetime fields for JSON
             serialized = serialize_status(status)
             await websocket.send_json(serialized)
+            
             await asyncio.sleep(WS_PUSH_INTERVAL)
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
