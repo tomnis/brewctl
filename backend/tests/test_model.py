@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from brewserver.model import (
     BrewState,
+    BrewStrategyType,
     ValveCommand,
     ScaleStatus,
     StartBrewRequest,
@@ -141,6 +142,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew-123",
             brew_state=BrewState.BREWING,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,
@@ -160,6 +162,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew-123",
             brew_state=BrewState.BREWING,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,
@@ -183,6 +186,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew",
             brew_state=BrewState.IDLE,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,
@@ -195,6 +199,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew",
             brew_state=BrewState.PAUSED,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,
@@ -207,6 +212,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew",
             brew_state=BrewState.COMPLETED,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,
@@ -221,6 +227,7 @@ class TestBrewStatus:
         status = BrewStatus(
             brew_id="test-brew",
             brew_state=BrewState.IDLE,
+            brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
             timestamp=timestamp,

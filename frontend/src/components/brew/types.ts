@@ -6,6 +6,7 @@ export interface BrewInProgress {
   current_weight: string | null;
   target_weight: string;
   brew_state: BrewState;
+  brew_strategy: string;
   time_started: string;
   time_completed: string | null;
   estimated_time_remaining: string | null;

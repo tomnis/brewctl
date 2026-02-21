@@ -79,6 +79,7 @@ function BrewInner() {
   const brewId = brewInProgress?.brew_id?.substring(0, 8) || "null";
   const brewState = brewInProgress?.brew_state || "idle";
   const state = brewState.toUpperCase();
+  const strategy = brewInProgress?.brew_strategy || "default";
   const started = formatStartedTime(brewInProgress?.time_started);
   const flowRate = brewInProgress?.current_flow_rate ? parseFloat(brewInProgress.current_flow_rate).toFixed(3) + " g/s" : "null";
   const weight = brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + " g" : "null";
@@ -117,6 +118,10 @@ function BrewInner() {
       <div className="terminal-row">
         <span className="terminal-label">TIME_STARTED:_</span>
         <span className="terminal-value">{started}</span>
+      </div>
+      <div className="terminal-row">
+        <span className="terminal-label">STRATEGY:_</span>
+        <span className="terminal-value">{strategy}</span>
       </div>
       <div className="terminal-separator">............_____________________________________________............</div>
       <div className="terminal-row">
