@@ -57,6 +57,7 @@ from model import Brew, BrewState
 from valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
+from brew_quality import compute_quality_score, get_score_grade, BrewQualityMetrics
 from datetime import datetime, timezone
 
 # Single instance of current brew instead of separate id and state
@@ -381,6 +382,90 @@ async def brew_status():
             res_dict = res.model_dump()
             return res_dict
         return res
+
+
+@app.get("/api/brew/{brew_id}/quality")
+async def get_brew_quality(brew_id: str):
+    """
+    Get quality metrics for a completed brew.
+    
+    Calculates how well the brew performed based on flow rate deviation
+    from the target throughout the brewing process.
+    """
+    global cur_brew
+    
+    # Check if this is the current brew
+    if cur_brew is not None and cur_brew.id == brew_id:
+        # Can only get quality for completed brews
+        if cur_brew.status != BrewState.COMPLETED:
+            return {"error": "brew not completed yet", "status": cur_brew.status.value}
+        
+        if cur_brew.time_completed is None:
+            return {"error": "brew has no completion time"}
+        
+        # Get brew parameters
+        time_started = cur_brew.time_started
+        time_completed = cur_brew.time_completed
+        target_weight = cur_brew.target_weight
+        vessel_weight = cur_brew.vessel_weight
+        target_flow_rate = COLDBREW_TARGET_FLOW_RATE
+        epsilon = COLDBREW_EPSILON
+        
+        # Get actual final weight from the last reading
+        readings = time_series.get_weight_readings_in_range(time_started, time_completed)
+        if not readings:
+            return {"error": "no weight readings found for this brew"}
+        
+        actual_weight = readings[-1][1]
+        
+    else:
+        # TODO: Support querying historical brews from database
+        return {"error": "brew not found or not the current brew"}
+    
+    # Get flow rates for the entire brew duration
+    flow_rates = time_series.get_flow_rates_for_brew(time_started, time_completed)
+    
+    if not flow_rates:
+        return {"error": "could not calculate flow rates for this brew"}
+    
+    # Calculate quality metrics
+    metrics = compute_quality_score(
+        flow_rates=flow_rates,
+        target_flow_rate=target_flow_rate,
+        epsilon=epsilon,
+        target_weight=target_weight,
+        vessel_weight=vessel_weight,
+        actual_weight=actual_weight,
+        time_started=time_started,
+        time_completed=time_completed
+    )
+    
+    grade = get_score_grade(metrics.overall_score)
+    
+    return {
+        "brew_id": brew_id,
+        "grade": grade,
+        "overall_score": round(metrics.overall_score, 1),
+        "flow_rate_metrics": {
+            "mean_absolute_error": round(metrics.mean_absolute_error, 4),
+            "root_mean_square_error": round(metrics.root_mean_square_error, 4),
+            "max_error": round(metrics.max_error, 4),
+        },
+        "stability_metrics": {
+            "standard_deviation": round(metrics.flow_rate_std_dev, 4),
+            "time_within_epsilon_pct": round(metrics.time_within_epsilon_pct, 1),
+        },
+        "completeness_metrics": {
+            "target_weight": metrics.target_weight,
+            "actual_weight": round(metrics.actual_weight, 1),
+            "achieved_pct": round(metrics.weight_achieved_pct, 1),
+        },
+        "timing_metrics": {
+            "expected_duration_seconds": round(metrics.expected_duration_seconds, 0),
+            "actual_duration_seconds": round(metrics.actual_duration_seconds, 0),
+            "efficiency_ratio": round(metrics.efficiency_ratio, 2),
+        },
+    }
 
 
 def serialize_status(status: dict) -> dict:

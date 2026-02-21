@@ -165,3 +165,101 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         
         # Calculate flow rate from derivatives
         return self.calculate_flow_rate_from_derivatives(readings)
+
+    @retry(tries=10, delay=4)
+    def get_weight_readings_in_range(
+        self, 
+        start_time: datetime, 
+        end_time: datetime
+    ) -> List[Tuple[datetime, float]]:
+        """
+        Read raw sequential weight values from InfluxDB within a time range.
+        
+        Args:
+            start_time: Start of the time range
+            end_time: End of the time range
+            
+        Returns:
+            List of (timestamp, weight) tuples sorted by time ascending
+        """
+        query_api = self.influxdb.query_api()
+        
+        # Calculate duration from start to end
+        duration = end_time - start_time
+        duration_str = f"-{int(duration.total_seconds())}s"
+        
+        query = f'from(bucket: "{self.bucket}")\
+            |> range(start: {duration_str})\
+            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")'
+        tables = query_api.query(org=self.org, query=query)
+        
+        readings: List[Tuple[datetime, float]] = []
+        for table in tables:
+            for record in table.records:
+                timestamp = record.get_time()
+                value = record.get_value()
+                # Filter to only include readings within the time range
+                if value is not None and start_time <= timestamp <= end_time:
+                    readings.append((timestamp, value))
+        
+        # Sort by timestamp ascending
+        readings.sort(key=lambda x: x[0])
+        return readings
+
+    def get_flow_rates_for_brew(
+        self, 
+        start_time: datetime, 
+        end_time: datetime,
+        window_seconds: float = COLDBREW_VALVE_INTERVAL_SECONDS
+    ) -> List[float]:
+        """
+        Calculate flow rates for each time window during a brew.
+        
+        This method divides the brew duration into windows and calculates
+        the flow rate for each window based on weight changes.
+        
+        Args:
+            start_time: When the brew started
+            end_time: When the brew ended
+            window_seconds: Size of each time window for flow rate calculation
+            
+        Returns:
+            List of flow rates (g/s) for each window
+        """
+        # Get all weight readings for the brew
+        all_readings = self.get_weight_readings_in_range(start_time, end_time)
+        
+        if len(all_readings) < 2:
+            logger.warning("Insufficient readings for flow rate calculation")
+            return []
+        
+        flow_rates: List[float] = []
+        
+        # Calculate flow rate for each window
+        # We use a sliding window approach
+        i = 0
+        n = len(all_readings)
+        
+        while i < n - 1:
+            window_start_time = all_readings[i][0]
+            window_end_time = window_start_time.replace(second=window_start_time.second + int(window_seconds))
+            
+            # Find readings within this window
+            window_readings = []
+            for j in range(i, n):
+                ts, wt = all_readings[j]
+                if ts <= window_end_time:
+                    window_readings.append((ts, wt))
+                else:
+                    break
+            
+            # Calculate flow rate for this window if we have enough points
+            if len(window_readings) >= 2:
+                flow_rate = self.calculate_flow_rate_from_derivatives(window_readings)
+                if flow_rate is not None:
+                    flow_rates.append(flow_rate)
+            
+            # Move to next window (overlap slightly for smoother results)
+            i = max(i + 1, len(window_readings) - 1 if window_readings else i + 1)
+        
+        return flow_rates
