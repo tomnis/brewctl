@@ -34,9 +34,9 @@ class ValveCommand(Enum):
 
 class ScaleStatus(BaseModel):
     connected: bool
-    weight: float
-    units: str
-    battery_pct: int
+    weight: Optional[float] = None
+    units: Optional[str] = None
+    battery_pct: Optional[int] = None
 
 
 @dataclass

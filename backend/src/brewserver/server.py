@@ -2,6 +2,7 @@ import asyncio
 import uuid
 import time
 import os
+import traceback
 
 from contextlib import asynccontextmanager
 from log import logger
@@ -245,6 +246,8 @@ async def brew_step_task(brew_id, strategy):
                 await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Error in brew step: {e}")
+            traceback.print_exc()
+
             if cur_brew is not None:
                 cur_brew.status = BrewState.ERROR
                 cur_brew.error_message = str(e)
