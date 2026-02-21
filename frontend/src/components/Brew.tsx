@@ -6,6 +6,7 @@ import CancelBrew from "./brew/CancelBrew";
 import PauseResumeButton from "./brew/PauseResumeButton";
 import FlipCard from "./brew/FlipCard";
 import { ValveGauge } from "./brew/ValveGauge";
+import { TrendChart } from "./brew/TrendChart";
 import NudgeButtons from "./brew/NudgeButtons";
 
 function formatTimeRemaining(seconds: number | null): string {
@@ -165,10 +166,16 @@ function BrewInner() {
         </div>
       )}
       
-      {/* Valve Position Gauge - only shown when brewing or paused */}
+      {/* Valve Position Gauge and Trend Chart - only shown when brewing or paused */}
       {isActive && (
-        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: "16px", padding: "8px 0", flexWrap: "wrap" }}>
           <ValveGauge position={valvePosition} isActive={isActive} />
+          <TrendChart 
+            flowRateHistory={brewInProgress?.flow_rate_history || []} 
+            weightHistory={brewInProgress?.weight_history || []}
+            targetWeight={brewInProgress?.target_weight || null}
+            isActive={isActive}
+          />
         </div>
       )}
       

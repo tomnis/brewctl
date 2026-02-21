@@ -1,10 +1,11 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { wsUrl } from "./constants";
-import { BrewInProgress, BrewError } from "./types";
+import { BrewInProgress, BrewError, DataPoint } from "./types";
 
 // Reconnection delay settings
 const RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30000;
+const MAX_HISTORY_POINTS = 128;
 
 export function useBrewPolling() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
@@ -13,6 +14,10 @@ export function useBrewPolling() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttempts = useRef(0);
+  
+  // Rolling history buffers for trend visualization
+  const flowRateHistoryRef = useRef<DataPoint[]>([]);
+  const weightHistoryRef = useRef<DataPoint[]>([]);
 
   const connect = useCallback(() => {
     // Close existing connection if any
@@ -32,6 +37,34 @@ export function useBrewPolling() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        
+        // Only track history when brew is active (brewing or paused)
+        const isActive = data.brew_state === "brewing" || data.brew_state === "paused";
+        
+        if (isActive) {
+          const timestamp = Date.now();
+          const flowRate = data.current_flow_rate ? parseFloat(data.current_flow_rate) : null;
+          const weight = data.current_weight ? parseFloat(data.current_weight) : null;
+          
+          // Add new data points to history
+          const newFlowPoint: DataPoint = { timestamp, flowRate, weight: null };
+          const newWeightPoint: DataPoint = { timestamp, flowRate: null, weight };
+          
+          // Update flow rate history
+          flowRateHistoryRef.current = [...flowRateHistoryRef.current, newFlowPoint].slice(-MAX_HISTORY_POINTS);
+          
+          // Update weight history  
+          weightHistoryRef.current = [...weightHistoryRef.current, newWeightPoint].slice(-MAX_HISTORY_POINTS);
+          
+          // Add history to the data object
+          data.flow_rate_history = [...flowRateHistoryRef.current];
+          data.weight_history = [...weightHistoryRef.current];
+        } else if (data.brew_state === "completed" || data.brew_state === "idle" || data.brew_state === "error") {
+          // Clear history when brew ends
+          flowRateHistoryRef.current = [];
+          weightHistoryRef.current = [];
+        }
+        
         setBrewInProgress(data);
         
         // Check if the brew is in error state

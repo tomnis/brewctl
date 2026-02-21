@@ -16,6 +16,12 @@ export interface BrewError {
   exception_type?: string;
 }
 
+export interface DataPoint {
+  timestamp: number;
+  flowRate: number | null;
+  weight: number | null;
+}
+
 export interface BrewInProgress {
   brew_id: string;
   current_flow_rate: string | null;
@@ -28,6 +34,9 @@ export interface BrewInProgress {
   estimated_time_remaining: string | null;
   error_message: string | null;
   valve_position: number | null;  // 0-199 for one full rotation
+  // Historical data for trend visualization
+  flow_rate_history?: DataPoint[];
+  weight_history?: DataPoint[];
 }
 
 export type BrewContextShape = {
