@@ -12,6 +12,10 @@ from config import COLDBREW_VALVE_INTERVAL_SECONDS
 class AbstractTimeSeries(ABC):
 
     @abstractmethod
+    def healthcheck(self) -> bool:
+        pass
+
+    @abstractmethod
     def write_scale_data(self, weight: float, battery_pct: int) -> None:
         """Write the current weight to the time series."""
         pass
@@ -53,6 +57,8 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         # logger.info(f"instantiated client: {self.url} {self.org} {self.bucket}")
         self.influxdb = InfluxDBClient(url=url, token=token, org=org, timeout=timeout)
 
+    def healthcheck(self) -> bool:
+        return self.influxdb.ping()
 
     @retry(tries=10, delay=4)
     def write_scale_data(self, weight: float, battery_pct: int):
