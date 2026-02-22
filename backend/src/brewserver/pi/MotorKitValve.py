@@ -58,7 +58,7 @@ class MotorKitValve(AbstractValve):
             self.breadcrumbs[direction] = 0
         self.breadcrumbs[direction] += 1
 
-        self.motor.onestep(direction=direction)
+        self.motor.onestep(direction=direction, style=stepper.INTERLEAVE)
 
 
     def return_to_start(self):
