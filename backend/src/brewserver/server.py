@@ -261,7 +261,7 @@ def get_component_health() -> dict:
     # Check InfluxDB connectivity
     influxdb_health = {"connected": True, "error": None}
     try:
-        time_series.get_current_weight()
+        time_series.healthcheck()
     except Exception as e:
         influxdb_health = {"connected": False, "error": str(e)}
         logger.error(f"Error checking InfluxDB health: {e}")
