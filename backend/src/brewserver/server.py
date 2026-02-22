@@ -310,7 +310,7 @@ def health_check():
     influxdb_health = {"connected": True, "error": None}
     try:
         # Try a simple query to check connectivity
-        time_series.get_current_weight()
+        time_series.healthcheck()
     except Exception as e:
         influxdb_health = {"connected": False, "error": str(e)}
         logger.error(f"Error checking InfluxDB health: {e}")
