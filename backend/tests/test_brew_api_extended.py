@@ -27,77 +27,6 @@ def test_scale_endpoint_returns_mock_values(client):
     assert data["battery_pct"] == 75
 
 
-def test_acquire_brew(client):
-    """Test acquiring a brew via acquire endpoint."""
-    response = client.post("/api/brew/acquire")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "valve acquired"
-    assert "brew_id" in data
-
-    # Clean up
-    client.post("/api/brew/kill")
-
-
-def test_acquire_brew_twice(client):
-    """Test that acquiring twice returns already acquired."""
-    response = client.post("/api/brew/acquire")
-    assert response.status_code == 200
-    assert "brew_id" in response.json()
-
-    response = client.post("/api/brew/acquire")
-    assert response.status_code == 200
-    assert response.json()["status"] == "valve already acquired"
-
-    # Clean up
-    client.post("/api/brew/kill")
-
-
-def test_valve_forward(client):
-    """Test stepping valve forward during a brew."""
-    response = client.post("/api/brew/start")
-    brew_id = response.json()["brew_id"]
-
-    response = client.post(f"/api/brew/valve/forward?brew_id={brew_id}")
-    assert response.status_code == 200
-    assert "stepped forward" in response.json()["status"]
-
-    client.post("/api/brew/kill")
-
-
-def test_valve_backward(client):
-    """Test stepping valve backward during a brew."""
-    response = client.post("/api/brew/start")
-    brew_id = response.json()["brew_id"]
-
-    response = client.post(f"/api/brew/valve/backward?brew_id={brew_id}")
-    assert response.status_code == 200
-    assert "stepped backward" in response.json()["status"]
-
-    client.post("/api/brew/kill")
-
-
-def test_valve_forward_wrong_brew_id(client):
-    """Test that valve forward with wrong brew_id fails."""
-    response = client.post("/api/brew/start")
-    assert response.status_code == 200
-
-    response = client.post("/api/brew/valve/forward?brew_id=wrong-id")
-    assert response.status_code == 422
-
-    client.post("/api/brew/kill")
-
-
-def test_valve_backward_wrong_brew_id(client):
-    """Test that valve backward with wrong brew_id fails."""
-    response = client.post("/api/brew/start")
-    assert response.status_code == 200
-
-    response = client.post("/api/brew/valve/backward?brew_id=wrong-id")
-    assert response.status_code == 422
-
-    client.post("/api/brew/kill")
-
 
 def test_start_brew_with_custom_params(client):
     """Test starting a brew with custom parameters."""
@@ -201,14 +130,3 @@ def test_start_brew_default_no_body(client):
     assert "brew_id" in response.json()
 
     client.post("/api/brew/kill")
-
-
-def test_release_brew(client):
-    """Test the release endpoint."""
-    response = client.post("/api/brew/start")
-    assert response.status_code == 200
-    brew_id = response.json()["brew_id"]
-
-    response = client.post(f"/api/brew/release?brew_id={brew_id}")
-    assert response.status_code == 200
-    assert "released" in response.json()["status"]

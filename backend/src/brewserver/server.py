@@ -433,8 +433,21 @@ async def start_brew(req: StartBrewRequest | None = None):
 
 @app.post("/api/brew/stop")
 async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
-    """Politely stops the given brew."""
-    return await release_brew(brew_id)
+    """Gracefully stop the current brew."""
+    global cur_brew
+    global scale
+
+    old_id = cur_brew.id
+    # TODO probably don't want to do this here, could cause some kind of conflict
+    # edge case with teardown before anything has happened
+    #valve.return_to_start()
+    time.sleep(1)
+    valve.release()
+
+    scale.disconnect()
+    scale = None
+    cur_brew = None
+    return {"status": f"valve brew id ${old_id} stopped"}  # Placeholder response
 
 
 @app.get("/api/brew/status")
@@ -682,42 +695,6 @@ async def resume_brew():
         raise HTTPException(status_code=400, detail="no paused brew to resume")
 
 
-
-
-# use acquire/release semantics to start scale data collection but expected to manage brew logic clientside
-@app.post("/api/brew/acquire")
-async def acquire_brew():
-    """Acquire the brew valve for exclusive use."""
-    global cur_brew
-    if cur_brew is None:
-        new_id = str(uuid.uuid4())
-        cur_brew = Brew(id=new_id, status=BrewState.IDLE, time_started=datetime.now(timezone.utc), target_weight=COLDBREW_TARGET_WEIGHT_GRAMS, vessel_weight=COLDBREW_VESSEL_WEIGHT_GRAMS)
-        # start a scale thread
-        asyncio.create_task(collect_scale_data_task(cur_brew.id, COLDBREW_SCALE_READ_INTERVAL))
-        return {"status": "valve acquired", "brew_id": new_id}  # Placeholder response
-    else:
-        # logger.info(f"brew id {cur_brew.id} already acquired")
-        return {"status": "valve already acquired"}  # Placeholder response kkk
-
-@app.post("/api/brew/release")
-async def release_brew(brew_id: Annotated[MatchBrewId, Query()]):
-    """Gracefully release the current brew."""
-    global cur_brew
-    global scale
-
-    old_id = cur_brew.id
-    # TODO probably don't want to do this here, could cause some kind of conflict
-    # edge case with teardown before anything has happened
-    #valve.return_to_start()
-    time.sleep(1)
-    valve.release()
-
-    scale.disconnect()
-    scale = None
-    cur_brew = None
-    return {"status": f"valve brew id ${old_id} released"}  # Placeholder response
-
-
 @app.post("/api/brew/kill", response_model=BrewCommandResponse)
 async def kill_brew():
     """Forcefully kill the current brew."""
@@ -746,21 +723,6 @@ def read_flow_rate():
     else:
         flow_rate = time_series.get_current_flow_rate()
     return FlowRateResponse(brew_id=cur_brew.id if cur_brew else None, flow_rate=flow_rate)
-
-
-@app.post("/api/brew/valve/forward")
-def step_forward(brew_id: Annotated[MatchBrewId, Query()],):
-    """Step the valve forward one step."""
-    valve.step_forward()
-    time.sleep(0.1)
-    return {"status": f"stepped forward one step"}
-
-@app.post("/api/brew/valve/backward")
-def step_backward(brew_id: Annotated[MatchBrewId, Query()]):
-    """Step the valve backward one step."""
-    valve.step_backward()
-    time.sleep(0.1)
-    return {"status": f"stepped backward 1 step"}
 
 
 # Rate limiting for nudge controls
