@@ -94,10 +94,13 @@ function BrewInner() {
   const isActive = brewState === "brewing" || brewState === "paused";
   const valvePosition = brewInProgress?.valve_position ?? null;
 
+  const flag = import.meta.env.VITE_COLDBREW_IS_PROD === 'true' ? "--dev" : "--dev";
+
+
   const front = (
     <div className="terminal-box terminal-glow">
       <div className="terminal-header terminal-row">
-        <span>$ ./brewctl start</span>
+        <span>$ ./brewctl start {flag}</span>
       </div>
       <StartBrew />
     </div>
@@ -106,7 +109,7 @@ function BrewInner() {
   const back = (
     <div className="terminal-box terminal-glow">
       <div className="terminal-header terminal-row">
-        <span>$ ./brewctl inspect --verbose</span>
+        <span>$ ./brewctl inspect {flag} --verbose</span>
       </div>
       
       <div className="terminal-row">
