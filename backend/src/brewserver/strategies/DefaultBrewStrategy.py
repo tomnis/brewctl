@@ -140,7 +140,7 @@ class DefaultBrewStrategy(AbstractBrewStrategy):
         current_flow_rate_str = "None" if current_flow_rate is None else f"{current_flow_rate:.4f}g/s"
         msg = f"current_flow_rate: {current_flow_rate_str}"
         if current_flow_rate is None:
-            logger.warn(f"{msg}")
+            logger.warning(f"{msg}")
             return ValveCommand.NOOP, self.valve_interval
         elif abs(self.target_flow_rate - current_flow_rate) <= self.epsilon:
             logger.info(f"{msg} (just right)")

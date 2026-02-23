@@ -16,7 +16,7 @@ class AbstractTimeSeries(ABC):
         pass
 
     @abstractmethod
-    def write_scale_data(self, weight: float, battery_pct: int) -> None:
+    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str) -> None:
         """Write the current weight to the time series."""
         pass
 
@@ -61,9 +61,9 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         return self.influxdb.ping()
 
     @retry(tries=10, delay=4)
-    def write_scale_data(self, weight: float, battery_pct: int):
+    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str):
         # logger.info(f"writing influxdb data: {weight} {battery_pct}")
-        p = Point("coldbrew").field("weight_grams", weight).field("battery_pct", battery_pct)
+        p = Point("coldbrew").tag("brew_id", brew_id).field("weight_grams", weight).field("battery_pct", battery_pct)
         # TODO this should be async
         write_api = self.influxdb.write_api(write_options=SYNCHRONOUS)
         write_api.write(bucket=self.bucket, record=p)
