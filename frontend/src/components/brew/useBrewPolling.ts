@@ -1,19 +1,15 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { wsUrl } from "./constants";
+import { sseUrl } from "./constants";
 import { BrewInProgress, BrewError, DataPoint } from "./types";
 
-// Reconnection delay settings
-const RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
+// Max history points for trend visualization
 const MAX_HISTORY_POINTS = 128;
 
 export function useBrewPolling() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
   const [brewError, setBrewError] = useState<BrewError | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const reconnectAttempts = useRef(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
   
   // Rolling history buffers for trend visualization
   const flowRateHistoryRef = useRef<DataPoint[]>([]);
@@ -21,20 +17,19 @@ export function useBrewPolling() {
 
   const connect = useCallback(() => {
     // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
-    const ws = new WebSocket(`${wsUrl()}/ws/brew/status`);
-    wsRef.current = ws;
+    const eventSource = new EventSource(sseUrl());
+    eventSourceRef.current = eventSource;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      reconnectAttempts.current = 0;
+    eventSource.onopen = () => {
+      console.log("SSE connected for brew status");
     };
 
-    ws.onmessage = (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         
@@ -78,42 +73,22 @@ export function useBrewPolling() {
           setBrewError(null);
         }
       } catch (e) {
-        console.error("Failed to parse WebSocket message:", e);
+        console.error("Failed to parse SSE message:", e);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-      wsRef.current = null;
-      
-      // Attempt to reconnect with exponential backoff
-      const delay = Math.min(
-        RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts.current),
-        MAX_RECONNECT_DELAY_MS
-      );
-      reconnectAttempts.current += 1;
-      
-      console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current})`);
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect();
-      }, delay);
+    eventSource.onerror = (error) => {
+      console.error("SSE error:", error);
+      // EventSource automatically attempts to reconnect, but we can handle errors here
+      // The connection will be closed and reconnect will be handled by the browser
     };
   }, []);
 
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    reconnectAttempts.current = 0;
   }, []);
 
   const startPolling = useCallback(() => {
@@ -133,10 +108,9 @@ export function useBrewPolling() {
     };
   }, [disconnect]);
 
-  // fetchBrewInProgress is no longer needed with WebSocket - the connection handles it
+  // fetchBrewInProgress ensures we're connected
   const fetchBrewInProgress = useCallback(async () => {
-    // With WebSocket, we just ensure we're connected
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (!eventSourceRef.current || eventSourceRef.current.readyState === EventSource.CLOSED) {
       connect();
     }
   }, [connect]);

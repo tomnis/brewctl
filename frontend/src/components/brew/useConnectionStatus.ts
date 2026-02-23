@@ -1,9 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { healthWsUrl } from "./constants";
-
-// Reconnection delay settings
-const RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
+import { healthSseUrl } from "./constants";
 
 // Types for component health status
 export interface ComponentHealth {
@@ -43,68 +39,47 @@ export function useConnectionStatus(): UseConnectionStatusResult {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const reconnectAttempts = useRef(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const connect = useCallback(() => {
     // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
-    const ws = new WebSocket(healthWsUrl());
-    wsRef.current = ws;
+    const eventSource = new EventSource(healthSseUrl());
+    eventSourceRef.current = eventSource;
 
-    ws.onopen = () => {
-      console.log("Health WebSocket connected");
+    eventSource.onopen = () => {
+      console.log("SSE connected for health status");
       setConnectionState("connected");
-      reconnectAttempts.current = 0;
     };
 
-    ws.onmessage = (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         setConnectionStatus(data);
       } catch (e) {
-        console.error("Failed to parse WebSocket message:", e);
+        console.error("Failed to parse SSE message:", e);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error("Health WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      console.log("Health WebSocket disconnected");
-      wsRef.current = null;
-      setConnectionState("reconnecting");
-      
-      // Attempt to reconnect with exponential backoff
-      const delay = Math.min(
-        RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts.current),
-        MAX_RECONNECT_DELAY_MS
-      );
-      reconnectAttempts.current += 1;
-      
-      console.log(`Reconnecting health in ${delay}ms (attempt ${reconnectAttempts.current})`);
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect();
-      }, delay);
+    eventSource.onerror = (error) => {
+      console.error("SSE error:", error);
+      // EventSource will automatically try to reconnect, but we can update state
+      // The connection may be temporarily closed during reconnection
+      if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+        setConnectionState("reconnecting");
+      }
     };
   }, []);
 
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    reconnectAttempts.current = 0;
     setConnectionState("disconnected");
   }, []);
 

@@ -2,14 +2,16 @@ import asyncio
 import uuid
 import time
 import os
+import json
 import traceback
 from typing import Optional
+from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
 from log import logger
 from fastapi import FastAPI, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -665,6 +667,82 @@ async def websocket_health(websocket: WebSocket):
         logger.info("WebSocket client disconnected from health status")
     except Exception as e:
         logger.error(f"Health WebSocket error: {e}")
+
+
+async def sse_brew_status_generator() -> AsyncGenerator[str, None]:
+    """
+    SSE generator for real-time brew status updates.
+    Yields SSE-formatted messages with brew status data.
+    """
+    try:
+        while True:
+            # Get current brew status
+            status = await brew_status()
+            serialized = serialize_status(status)
+            
+            # Format as SSE event
+            yield f"data: {json.dumps(serialized)}\n\n"
+            
+            await asyncio.sleep(WS_PUSH_INTERVAL)
+    except asyncio.CancelledError:
+        logger.info("SSE brew status connection closed by client")
+        raise
+
+
+@app.get("/sse/brew/status")
+async def sse_brew_status():
+    """
+    SSE endpoint for real-time brew status updates.
+    Clients connect and receive periodic brew status broadcasts via Server-Sent Events.
+    """
+    return StreamingResponse(
+        sse_brew_status_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
+
+
+async def sse_health_generator() -> AsyncGenerator[str, None]:
+    """
+    SSE generator for real-time health status updates.
+    Yields SSE-formatted messages with component health data.
+    """
+    try:
+        while True:
+            # Get component health status
+            health = get_component_health()
+            
+            # Add timestamp
+            health["timestamp"] = datetime.now(timezone.utc).isoformat()
+            
+            # Format as SSE event
+            yield f"data: {json.dumps(health)}\n\n"
+            
+            await asyncio.sleep(WS_HEALTH_PUSH_INTERVAL)
+    except asyncio.CancelledError:
+        logger.info("SSE health connection closed by client")
+        raise
+
+
+@app.get("/sse/health")
+async def sse_health():
+    """
+    SSE endpoint for real-time health status updates.
+    Clients connect and receive periodic component health broadcasts via Server-Sent Events.
+    """
+    return StreamingResponse(
+        sse_health_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
 
 
 @app.post("/api/brew/pause", response_model=BrewCommandResponse)

@@ -13,6 +13,17 @@ export const healthWsUrl = () => {
   return `${wsUrl()}/ws/health`;
 };
 
+// SSE URL for real-time brew status updates
+export const sseUrl = () => {
+  const api = getApiUrl();
+  return api.replace('/api', '') + '/sse/brew/status';
+};
+
+// SSE URL for health status updates
+export const healthSseUrl = () => {
+  return `${sseUrl().replace('/sse/brew/status', '/sse/health')}`;
+};
+
 export const DEFAULT_FLOW = "0.05";
 export const DEFAULT_VALVE_INTERVAL = "90";
 export const DEFAULT_EPSILON = "0.008";
