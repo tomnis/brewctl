@@ -126,8 +126,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       </span>
       
       {/* Flow Rate Chart */}
-      <div style={{ width: "100%", height: "100px" }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ width: "100%", height: "100px", minHeight: 100 }}>
+        <ResponsiveContainer width={400} height={100}>
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis
@@ -164,8 +164,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       </div>
 
       {/* Weight Chart */}
-      <div style={{ width: "100%", height: "80px", marginTop: "8px" }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ width: "100%", height: "80px", marginTop: "8px", minHeight: 80 }}>
+        <ResponsiveContainer width={400} height={80}>
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis
