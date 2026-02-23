@@ -1,19 +1,9 @@
 export type BrewState = "brewing" | "paused" | "completed" | "idle" | "error";
 
-// Error types for enhanced error handling
-export type ErrorSeverity = "info" | "warning" | "error" | "critical";
-export type ErrorCategory = "scale" | "valve" | "timeseries" | "brew" | "network" | "hardware" | "configuration";
-
+// Simple error type
 export interface BrewError {
   error: string;
-  error_detailed?: string;
-  category: ErrorCategory;
-  severity: ErrorSeverity;
-  timestamp: string;
-  retryable: boolean;
-  brew_id?: string;
-  recovery_suggestion?: string;
-  exception_type?: string;
+  timestamp?: string;
 }
 
 export interface DataPoint {

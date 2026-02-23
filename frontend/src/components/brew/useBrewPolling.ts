@@ -69,33 +69,10 @@ export function useBrewPolling() {
         
         // Check if the brew is in error state
         if (data.brew_state === "error") {
-          // The error info can come from either error_message directly or from 
-          // the enhanced error response format
-          if (data.error) {
-            // Enhanced error response from backend
-            setBrewError({
-              error: data.error || data.error_message || "An error occurred",
-              error_detailed: data.error_detailed,
-              category: data.category || "brew",
-              severity: data.severity || "error",
-              timestamp: data.timestamp || new Date().toISOString(),
-              retryable: data.retryable ?? true,
-              brew_id: data.brew_id,
-              recovery_suggestion: data.recovery_suggestion,
-              exception_type: data.exception_type,
-            });
-          } else {
-            // Legacy error message format
-            setBrewError({
-              error: data.error_message || "An error occurred",
-              category: "brew",
-              severity: "error",
-              timestamp: new Date().toISOString(),
-              retryable: true,
-              brew_id: data.brew_id,
-              recovery_suggestion: "Try restarting the brew or check the system status.",
-            });
-          }
+          setBrewError({
+            error: data.error_message || "An error occurred",
+            timestamp: new Date().toISOString(),
+          });
         } else {
           // Clear error when not in error state
           setBrewError(null);

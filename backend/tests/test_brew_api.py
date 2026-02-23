@@ -15,7 +15,7 @@ def test_brew_kill(client):
     # Try to start another brew while one is in progress
     response = client.post("/api/brew/start")
     assert response.status_code == 409
-    assert response.json()["detail"]["error"] == "An unexpected error occurred"
+    assert response.json()["detail"] == "A brew is already in progress"
 
     # Kill the brew
     response = client.post("/api/brew/kill")

@@ -88,8 +88,8 @@ WS_HEALTH_PUSH_INTERVAL = float(os.getenv("WS_HEALTH_PUSH_INTERVAL", "5.0"))
 logger.info(f"WS_HEALTH_PUSH_INTERVAL = {WS_HEALTH_PUSH_INTERVAL}")
 
 # WebSocket heartbeat configuration
-WS_HEARTBEAT_INTERVAL = float(os.getenv("WS_HEARTBEAT_INTERVAL", "30.0"))  # seconds between ping frames
-WS_PONG_TIMEOUT = float(os.getenv("WS_PONG_TIMEOUT", "10.0"))  # seconds to wait for pong before disconnecting
+WS_HEARTBEAT_INTERVAL = float(os.getenv("WS_HEARTBEAT_INTERVAL", "120.0"))  # seconds between ping frames
+WS_PONG_TIMEOUT = float(os.getenv("WS_PONG_TIMEOUT", "60.0"))  # seconds to wait for pong before disconnecting
 logger.info(f"WS_HEARTBEAT_INTERVAL = {WS_HEARTBEAT_INTERVAL}")
 logger.info(f"WS_PONG_TIMEOUT = {WS_PONG_TIMEOUT}")
 
@@ -117,15 +117,6 @@ from time_series import InfluxDBTimeSeries
 from brew_quality import compute_quality_score, get_score_grade, BrewQualityMetrics
 from datetime import datetime, timezone
 
-# Import custom exceptions and error handling
-from exceptions import (
-    ScaleConnectionError,
-    ScaleReadError,
-    BrewConflictError,
-    TransientError,
-    PermanentError,
-)
-from error_handling import handle_exception
 
 # Single instance of current brew instead of separate id and state
 cur_brew: Brew | None = None
@@ -388,12 +379,9 @@ async def collect_scale_data_task(brew_id, s):
             # TODO should we also record the derivative as we've calculated it?
         except Exception as e:
             logger.error(f"Error collecting scale data: {e}")
-            # Use enhanced error handling
-            error_info = handle_exception(e, brew_id=brew_id)
             if cur_brew is not None:
                 cur_brew.status = BrewState.ERROR
-                # Store both simple message and detailed error info
-                cur_brew.error_message = error_info.get("error", str(e))
+                cur_brew.error_message = str(e)
             await asyncio.sleep(s)
 
 
@@ -434,12 +422,9 @@ async def brew_step_task(brew_id, strategy):
             logger.error(f"Error in brew step: {e}")
             traceback.print_exc()
 
-            # Use enhanced error handling
-            error_info = handle_exception(e, brew_id=brew_id)
             if cur_brew is not None:
                 cur_brew.status = BrewState.ERROR
-                # Store the enhanced error message
-                cur_brew.error_message = error_info.get("error", str(e))
+                cur_brew.error_message = str(e)
             await asyncio.sleep(strategy.valve_interval)
 
 
@@ -477,26 +462,13 @@ async def start_brew(req: StartBrewRequest | None = None):
     
     # Check if a brew is already in progress
     if cur_brew is not None and cur_brew.status in (BrewState.BREWING, BrewState.PAUSED):
-        # Use custom exception for better error handling
-        error_resp = handle_exception(
-            BrewConflictError(cur_brew.id),
-            brew_id=cur_brew.id if cur_brew else None
-        )
-        raise HTTPException(status_code=409, detail=error_resp)
+        raise HTTPException(status_code=409, detail="A brew is already in progress")
     
     # Try to connect to scale with exponential backoff
-    try:
-        if scale is None or not scale.connected:
-            scale = create_scale()
-            if not scale.reconnect_with_backoff():
-                error_resp = handle_exception(
-                    ScaleConnectionError("Could not connect to scale after multiple attempts"),
-                    brew_id=None
-                )
-                raise HTTPException(status_code=503, detail=error_resp)
-    except ScaleConnectionError as e:
-        error_resp = handle_exception(e)
-        raise HTTPException(status_code=503, detail=error_resp)
+    if scale is None or not scale.connected:
+        scale = create_scale()
+        if not scale.reconnect_with_backoff():
+            raise HTTPException(status_code=503, detail="Could not connect to scale after multiple attempts")
     
     # Only allow starting if no brew or brew is completed/error
     if cur_brew is None or cur_brew.status in (BrewState.COMPLETED, BrewState.ERROR):
@@ -526,11 +498,7 @@ async def start_brew(req: StartBrewRequest | None = None):
         return StartBrewResponse(status="started", brew_id=cur_brew.id)
     else:
         # This should not be reached due to earlier check, but just in case
-        error_resp = handle_exception(
-            BrewConflictError(cur_brew.id if cur_brew else "unknown"),
-            brew_id=cur_brew.id if cur_brew else None
-        )
-        raise HTTPException(status_code=409, detail=error_resp)
+        raise HTTPException(status_code=409, detail="A brew is already in progress")
 
 @app.post("/api/brew/stop")
 async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
