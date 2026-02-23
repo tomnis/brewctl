@@ -85,7 +85,7 @@ def create_time_series() -> InfluxDBTimeSeries:
     return ts
 
 
-scale: AbstractScale = create_scale()
+scale: AbstractScale = None #create_scale()
 valve: AbstractValve = create_valve()
 time_series: AbstractTimeSeries = create_time_series()
 
@@ -142,7 +142,7 @@ def get_scale_status() -> ScaleStatus:
         scale = create_scale()
         scale.reconnect_with_backoff()
 
-    if scale.connected:
+    if scale is not None and scale.connected:
         weight = scale.get_weight()
         battery_pct = scale.get_battery_percentage()
         units = scale.get_units()
@@ -167,6 +167,7 @@ def get_component_health() -> dict:
             "units": scale_status.units,
         }
     except Exception as e:
+        traceback.print_exc()
         logger.error(f"Error checking scale health: {e}")
     
     # Check valve availability
@@ -292,11 +293,13 @@ async def collect_scale_data_task(brew_id, s):
     while brew_id is not None and cur_brew is not None and brew_id == cur_brew.id:
         try:
             # Collect data when actively brewing or in error state (to recover)
-            if cur_brew.status in (BrewState.BREWING, BrewState.ERROR):
+            if cur_brew.status in (BrewState.BREWING, BrewState.ERROR, BrewState.PAUSED):
                 scale_state = get_scale_status()
                 # logger.info(f"Scale state: {scale_state}")
                 weight = scale_state.weight
                 battery_pct = scale_state.battery_pct
+                if weight is None:
+                    logger.warn("Scale returned no weight")
                 if weight is not None and battery_pct is not None:
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
                     # TODO could add a brew_id label here

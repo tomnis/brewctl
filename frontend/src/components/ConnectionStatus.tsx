@@ -44,7 +44,7 @@ function ComponentIndicator({
     >
       <StatusDot connected={connected} />
       <span style={{ marginRight: "2px" }}>{name}:</span>
-      <span>{connected ? "OK" : "Offline"}</span>
+      <span>{connected ? "OK" : "Error"}</span>
       {details && <span style={{ opacity: 0.7, marginLeft: "2px" }}>{details}</span>}
     </span>
   );
@@ -118,7 +118,7 @@ export default function ConnectionStatus() {
             connected={connectionStatus?.valve?.available ?? false}
           />
           <ComponentIndicator 
-            name="INFLUX" 
+            name="INFLUXDB"
             connected={connectionStatus?.influxdb?.connected ?? false}
           />
         </>
