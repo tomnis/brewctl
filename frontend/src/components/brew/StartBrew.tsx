@@ -96,10 +96,11 @@ export default function StartBrew() {
     });
 
     const newBrewRequest = {
-      target_flow_rate: effectiveTargetFlow,
-      valve_interval: effectiveValveInterval,
-      epsilon: effectiveEpsilon,
-      target_weight: effectiveTargetWeight,
+      target_flow_rate: parseFloat(effectiveTargetFlow),
+      valve_interval: parseFloat(effectiveValveInterval),
+      epsilon: parseFloat(effectiveEpsilon),
+      target_weight: parseFloat(effectiveTargetWeight),
+      vessel_weight: 229,
       strategy: strategy,
       strategy_params: effectiveStrategyParams,
     };

@@ -304,8 +304,7 @@ async def collect_scale_data_task(brew_id, s):
                     logger.warn("Scale returned no weight")
                 if weight is not None and battery_pct is not None:
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
-                    # TODO could add a brew_id label here
-                    time_series.write_scale_data(weight, battery_pct)
+                    time_series.write_scale_data(weight, battery_pct, brew_id)
                     # Reset state to brewing on successful data collection
                     cur_brew.status = BrewState.BREWING
             await asyncio.sleep(s)
@@ -860,6 +859,3 @@ app.mount("/app/assets", StaticFiles(directory=assets_dir), name="assets")
 @app.get("/app/{full_path:path}")
 async def serve_react_app(full_path: str):
     return FileResponse("build/index.html")
-
-
-

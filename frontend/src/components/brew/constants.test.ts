@@ -9,13 +9,15 @@ import {
   DEFAULT_TARGET_WEIGHT,
   STRATEGIES,
   DEFAULT_STRATEGY,
+  type StrategyType,
+  type Strategy,
+} from './constants';
+import {
   pauseBrew,
   resumeBrew,
   nudgeOpen,
   nudgeClose,
-  type StrategyType,
-  type Strategy,
-} from './constants';
+} from './brewService';
 
 describe('API Configuration', () => {
   describe('apiUrl', () => {

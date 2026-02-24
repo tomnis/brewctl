@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useBrewStatus } from "./useBrewStatus";
 import { BrewContextShape } from "./types";
-import { pauseBrew, resumeBrew, nudgeOpen, nudgeClose } from "./constants";
+import { pauseBrew, resumeBrew, nudgeOpen, nudgeClose } from "./brewService";
 
 const BrewContext = createContext<BrewContextShape>({
   brewInProgress: null,

@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { BrewProvider, useBrewContext } from './BrewProvider';
-import * as constants from './constants';
+import * as brewService from './brewService';
 
 // Mock the constants module
 vi.mock('./constants', () => ({
   wsUrl: vi.fn(() => 'ws://localhost:8000'),
+}));
+
+// Mock the brewService module
+vi.mock('./brewService', () => ({
   pauseBrew: vi.fn(),
   resumeBrew: vi.fn(),
+  nudgeOpen: vi.fn(),
+  nudgeClose: vi.fn(),
 }));
 
 // Mock useBrewStatus
@@ -260,7 +266,7 @@ describe('BrewProvider', () => {
       await result.current.handlePause();
     });
 
-    expect(constants.pauseBrew).toHaveBeenCalled();
+    expect(brewService.pauseBrew).toHaveBeenCalled();
     expect(fetchBrewInProgress).toHaveBeenCalled();
   });
 
@@ -278,7 +284,7 @@ describe('BrewProvider', () => {
       await result.current.handleResume();
     });
 
-    expect(constants.resumeBrew).toHaveBeenCalled();
+    expect(brewService.resumeBrew).toHaveBeenCalled();
     expect(fetchBrewInProgress).toHaveBeenCalled();
   });
 

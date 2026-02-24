@@ -3,7 +3,7 @@ import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import { BrewProvider } from './BrewProvider';
 import { useBrewStatus } from './useBrewStatus';
-import * as constants from './constants';
+import * as brewService from './brewService';
 import { BrewInProgress } from './types';
 
 // Mock Chakra UI components
@@ -24,6 +24,10 @@ vi.mock('@chakra-ui/react', () => ({
 // Mock the constants module
 vi.mock('./constants', () => ({
   wsUrl: vi.fn(() => 'ws://localhost:8000'),
+}));
+
+// Mock the brewService module
+vi.mock('./brewService', () => ({
   pauseBrew: vi.fn(),
   resumeBrew: vi.fn(),
   nudgeOpen: vi.fn(),
@@ -182,7 +186,7 @@ describe('NudgeButtons', () => {
         screen.getByText('Nudge Open').click();
       });
 
-      expect(constants.nudgeOpen).toHaveBeenCalled();
+      expect(brewService.nudgeOpen).toHaveBeenCalled();
       expect(fetchBrewInProgress).toHaveBeenCalled();
     });
 
@@ -202,7 +206,7 @@ describe('NudgeButtons', () => {
         screen.getByText('Nudge Close').click();
       });
 
-      expect(constants.nudgeClose).toHaveBeenCalled();
+      expect(brewService.nudgeClose).toHaveBeenCalled();
       expect(fetchBrewInProgress).toHaveBeenCalled();
     });
   });
