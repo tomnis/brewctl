@@ -83,17 +83,17 @@ class DefaultBrewStrategy(AbstractBrewStrategy):
                  epsilon: float = None, target_weight: float = None, vessel_weight: float = None):
         # Set defaults
         if target_flow_rate is None:
-            target_flow_rate = COLDBREW_TARGET_FLOW_RATE
+            target_flow_rate = BREWCTL_TARGET_FLOW_RATE
         if scale_interval is None:
-            scale_interval = COLDBREW_SCALE_READ_INTERVAL
+            scale_interval = BREWCTL_SCALE_READ_INTERVAL
         if valve_interval is None:
-            valve_interval = COLDBREW_VALVE_INTERVAL_SECONDS
+            valve_interval = BREWCTL_VALVE_INTERVAL_SECONDS
         if epsilon is None:
-            epsilon = COLDBREW_EPSILON
+            epsilon = BREWCTL_EPSILON
         if target_weight is None:
-            target_weight = COLDBREW_TARGET_WEIGHT_GRAMS
+            target_weight = BREWCTL_TARGET_WEIGHT_GRAMS
         if vessel_weight is None:
-            vessel_weight = COLDBREW_VESSEL_WEIGHT_GRAMS
+            vessel_weight = BREWCTL_VESSEL_WEIGHT_GRAMS
         
         self.target_flow_rate = target_flow_rate
         self.scale_interval = scale_interval
@@ -111,12 +111,12 @@ class DefaultBrewStrategy(AbstractBrewStrategy):
     @classmethod
     def from_params(cls, strategy_params: Dict[str, Any], base_params: Dict[str, Any]) -> "DefaultBrewStrategy":
         return DefaultBrewStrategy(
-            target_flow_rate=base_params.get("target_flow_rate", COLDBREW_TARGET_FLOW_RATE),
-            scale_interval=base_params.get("scale_interval", COLDBREW_SCALE_READ_INTERVAL),
-            valve_interval=base_params.get("valve_interval", COLDBREW_VALVE_INTERVAL_SECONDS),
-            epsilon=base_params.get("epsilon", COLDBREW_EPSILON),
-            target_weight=base_params.get("target_weight", COLDBREW_TARGET_WEIGHT_GRAMS),
-            vessel_weight=base_params.get("vessel_weight", COLDBREW_VESSEL_WEIGHT_GRAMS),
+            target_flow_rate=base_params.get("target_flow_rate", BREWCTL_TARGET_FLOW_RATE),
+            scale_interval=base_params.get("scale_interval", BREWCTL_SCALE_READ_INTERVAL),
+            valve_interval=base_params.get("valve_interval", BREWCTL_VALVE_INTERVAL_SECONDS),
+            epsilon=base_params.get("epsilon", BREWCTL_EPSILON),
+            target_weight=base_params.get("target_weight", BREWCTL_TARGET_WEIGHT_GRAMS),
+            vessel_weight=base_params.get("vessel_weight", BREWCTL_VESSEL_WEIGHT_GRAMS),
         )
 
     @classmethod

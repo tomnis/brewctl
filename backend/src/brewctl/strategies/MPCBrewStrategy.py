@@ -94,11 +94,11 @@ class MPCBrewStrategy(AbstractBrewStrategy):
     @classmethod
     def from_params(cls, strategy_params: Dict[str, Any], base_params: Dict[str, Any]) -> "MPCBrewStrategy":
         return MPCBrewStrategy(
-            target_flow_rate=base_params.get("target_flow_rate", COLDBREW_TARGET_FLOW_RATE),
-            scale_interval=base_params.get("scale_interval", COLDBREW_SCALE_READ_INTERVAL),
-            valve_interval=base_params.get("valve_interval", COLDBREW_VALVE_INTERVAL_SECONDS),
-            target_weight=base_params.get("target_weight", COLDBREW_TARGET_WEIGHT_GRAMS),
-            vessel_weight=base_params.get("vessel_weight", COLDBREW_VESSEL_WEIGHT_GRAMS),
+            target_flow_rate=base_params.get("target_flow_rate", BREWCTL_TARGET_FLOW_RATE),
+            scale_interval=base_params.get("scale_interval", BREWCTL_SCALE_READ_INTERVAL),
+            valve_interval=base_params.get("valve_interval", BREWCTL_VALVE_INTERVAL_SECONDS),
+            target_weight=base_params.get("target_weight", BREWCTL_TARGET_WEIGHT_GRAMS),
+            vessel_weight=base_params.get("vessel_weight", BREWCTL_VESSEL_WEIGHT_GRAMS),
             horizon=strategy_params.get("horizon", 15),
             plant_gain=strategy_params.get("plant_gain", 0.005),
             plant_time_constant=strategy_params.get("plant_time_constant", 15.0),

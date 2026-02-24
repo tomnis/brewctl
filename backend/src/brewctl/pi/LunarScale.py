@@ -7,7 +7,7 @@ import pyacaia
 import time
 
 from log import logger
-from config import COLDBREW_SCALE_RECONNECT_RETRIES, COLDBREW_SCALE_RECONNECT_BASE_DELAY, COLDBREW_SCALE_RECONNECT_MAX_DELAY
+from config import BREWCTL_SCALE_RECONNECT_RETRIES, BREWCTL_SCALE_RECONNECT_BASE_DELAY, BREWCTL_SCALE_RECONNECT_MAX_DELAY
 
 
 class LunarScale(AbstractScale):
@@ -20,9 +20,9 @@ class LunarScale(AbstractScale):
         self.mac_address: str = mac_address
         self.scale: AcaiaScale = AcaiaScale(mac=self.mac_address)
         # Allow override of defaults via constructor, otherwise use config
-        self.max_retries = max_retries if max_retries is not None else COLDBREW_SCALE_RECONNECT_RETRIES
-        self.base_delay = base_delay if base_delay is not None else COLDBREW_SCALE_RECONNECT_BASE_DELAY
-        self.max_delay = max_delay if max_delay is not None else COLDBREW_SCALE_RECONNECT_MAX_DELAY
+        self.max_retries = max_retries if max_retries is not None else BREWCTL_SCALE_RECONNECT_RETRIES
+        self.base_delay = base_delay if base_delay is not None else BREWCTL_SCALE_RECONNECT_BASE_DELAY
+        self.max_delay = max_delay if max_delay is not None else BREWCTL_SCALE_RECONNECT_MAX_DELAY
 
     @property
     def connected(self) -> bool:

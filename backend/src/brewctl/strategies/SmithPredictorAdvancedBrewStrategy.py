@@ -107,11 +107,11 @@ class SmithPredictorAdvancedBrewStrategy(AbstractBrewStrategy):
     @classmethod
     def from_params(cls, strategy_params: Dict[str, Any], base_params: Dict[str, Any]) -> "SmithPredictorAdvancedBrewStrategy":
         return SmithPredictorAdvancedBrewStrategy(
-            target_flow_rate=base_params.get("target_flow_rate", COLDBREW_TARGET_FLOW_RATE),
-            scale_interval=base_params.get("scale_interval", COLDBREW_SCALE_READ_INTERVAL),
-            valve_interval=base_params.get("valve_interval", COLDBREW_VALVE_INTERVAL_SECONDS),
-            target_weight=base_params.get("target_weight", COLDBREW_TARGET_WEIGHT_GRAMS),
-            vessel_weight=base_params.get("vessel_weight", COLDBREW_VESSEL_WEIGHT_GRAMS),
+            target_flow_rate=base_params.get("target_flow_rate", BREWCTL_TARGET_FLOW_RATE),
+            scale_interval=base_params.get("scale_interval", BREWCTL_SCALE_READ_INTERVAL),
+            valve_interval=base_params.get("valve_interval", BREWCTL_VALVE_INTERVAL_SECONDS),
+            target_weight=base_params.get("target_weight", BREWCTL_TARGET_WEIGHT_GRAMS),
+            vessel_weight=base_params.get("vessel_weight", BREWCTL_VESSEL_WEIGHT_GRAMS),
             kp=_extract_float(strategy_params.get("kp"), 1.0),
             ki=_extract_float(strategy_params.get("ki"), 0.05),
             kd=_extract_float(strategy_params.get("kd"), 0.1),
