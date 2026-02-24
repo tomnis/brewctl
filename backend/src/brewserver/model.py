@@ -74,8 +74,7 @@ class ScaleStatus(BaseModel):
     battery_pct: Optional[int] = None
 
 
-@dataclass
-class Brew:
+class Brew(BaseModel):
     id: str
     status: BrewState
     time_started: datetime
@@ -84,6 +83,30 @@ class Brew:
     strategy: BrewStrategyType = BrewStrategyType.DEFAULT
     time_completed: Optional[datetime] = None
     error_message: Optional[str] = None
+
+    def to_brew_status(
+        self,
+        timestamp: datetime,
+        current_flow_rate: Optional[float] = None,
+        current_weight: Optional[float] = None,
+        estimated_time_remaining: Optional[float] = None,
+        valve_position: Optional[int] = None,
+    ) -> "BrewStatus":
+        """Convert internal Brew state to API response BrewStatus."""
+        return BrewStatus(
+            brew_id=self.id,
+            brew_state=self.status,
+            brew_strategy=self.strategy,
+            time_started=self.time_started,
+            time_completed=self.time_completed,
+            target_weight=self.target_weight,
+            timestamp=timestamp,
+            current_flow_rate=current_flow_rate,
+            current_weight=current_weight,
+            estimated_time_remaining=estimated_time_remaining,
+            error_message=self.error_message,
+            valve_position=valve_position,
+        )
 
 
 @dataclass

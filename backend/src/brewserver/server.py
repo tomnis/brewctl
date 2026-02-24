@@ -461,37 +461,24 @@ async def brew_status():
     elif cur_brew.status == BrewState.COMPLETED:
         # For completed brews, return final stats without computing dynamic values
         timestamp = datetime.now(timezone.utc)
-        res = BrewStatus(
-            brew_id=cur_brew.id,
-            brew_state=cur_brew.status,
-            brew_strategy=cur_brew.strategy,
-            time_started=cur_brew.time_started,
-            time_completed=cur_brew.time_completed,
-            target_weight=cur_brew.target_weight,
+        brew_status = cur_brew.to_brew_status(
             timestamp=timestamp,
             current_flow_rate=None,
             current_weight=None,
             estimated_time_remaining=0.0,
-            valve_position=None  # Valve returns to start on completion
+            valve_position=None,  # Valve returns to start on completion
         )
-        return res.model_dump()
+        return brew_status.model_dump()
     elif cur_brew.status == BrewState.ERROR:
         timestamp = datetime.now(timezone.utc)
-        res = BrewStatus(
-            brew_id=cur_brew.id,
-            brew_state=cur_brew.status,
-            brew_strategy=cur_brew.strategy,
-            time_started=cur_brew.time_started,
-            time_completed=None,
-            target_weight=cur_brew.target_weight,
+        brew_status = cur_brew.to_brew_status(
             timestamp=timestamp,
             current_flow_rate=None,
             current_weight=None,
             estimated_time_remaining=None,
-            error_message=cur_brew.error_message,
-            valve_position=valve.get_position()
+            valve_position=valve.get_position(),
         )
-        return res.model_dump()
+        return brew_status.model_dump()
     else:
         timestamp = datetime.now(timezone.utc)
         # Use time_started to filter out readings from previous brews
@@ -515,10 +502,14 @@ async def brew_status():
             else:
                 estimated_time_remaining = remaining_weight / current_flow_rate
             
-            res = BrewStatus(brew_id=cur_brew.id, brew_state=cur_brew.status, brew_strategy=cur_brew.strategy, time_started=cur_brew.time_started, target_weight=cur_brew.target_weight, timestamp=timestamp, current_flow_rate=current_flow_rate, current_weight=current_weight, estimated_time_remaining=estimated_time_remaining, valve_position=valve.get_position())
-            # Add brew_state to the response
-            res_dict = res.model_dump()
-            return res_dict
+            brew_status = cur_brew.to_brew_status(
+                timestamp=timestamp,
+                current_flow_rate=current_flow_rate,
+                current_weight=current_weight,
+                estimated_time_remaining=estimated_time_remaining,
+                valve_position=valve.get_position(),
+            )
+            return brew_status.model_dump()
         return res
 
 
