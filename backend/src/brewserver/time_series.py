@@ -4,7 +4,7 @@ from datetime import datetime
 
 from log import logger
 from influxdb_client import InfluxDBClient, Point
-from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client.client.write_api import ASYNCHRONOUS
 from retry import retry
 from config import COLDBREW_VALVE_INTERVAL_SECONDS
 
@@ -60,12 +60,12 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
     def healthcheck(self) -> bool:
         return self.influxdb.ping()
 
-    @retry(tries=10, delay=4)
     def write_scale_data(self, weight: float, battery_pct: int, brew_id: str):
+        """Write the current weight to the time series asynchronously."""
         # logger.info(f"writing influxdb data: {weight} {battery_pct}")
         p = Point("coldbrew").tag("brew_id", brew_id).field("weight_grams", weight).field("battery_pct", battery_pct)
-        # TODO this should be async
-        write_api = self.influxdb.write_api(write_options=SYNCHRONOUS)
+        # Use ASYNCHRONOUS write to avoid blocking the control loop on network latency
+        write_api = self.influxdb.write_api(write_options=ASYNCHRONOUS)
         write_api.write(bucket=self.bucket, record=p)
 
 
