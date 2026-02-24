@@ -3,7 +3,7 @@ import { useBrewContext } from "./BrewProvider";
 import { apiUrl } from "./constants";
 
 export default function CancelBrew() {
-  const { fetchBrewInProgress, stopPolling, toggleFlip } = useBrewContext();
+  const { fetchBrewInProgress, stopConnection, toggleFlip } = useBrewContext();
 
   const cancelBrew = async () => {
     try {
@@ -11,7 +11,7 @@ export default function CancelBrew() {
     } catch (e) {
       console.error("cancel failed", e);
     } finally {
-      stopPolling();
+      stopConnection();
       await fetchBrewInProgress();
       toggleFlip();
     }
