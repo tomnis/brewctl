@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from brewserver.config import *
+from brewctl.config import *
 from config import *
 from enum import Enum
 from dataclasses import dataclass
@@ -111,12 +111,12 @@ class Brew(BaseModel):
 
 @dataclass
 class StartBrewRequest(BaseModel):
-    target_flow_rate: float = COLDBREW_TARGET_FLOW_RATE
-    scale_interval: float = COLDBREW_SCALE_READ_INTERVAL
-    valve_interval: float = COLDBREW_VALVE_INTERVAL_SECONDS
-    target_weight: float = COLDBREW_TARGET_WEIGHT_GRAMS
-    vessel_weight: float = COLDBREW_VESSEL_WEIGHT_GRAMS
-    epsilon: float = COLDBREW_EPSILON
+    target_flow_rate: float = BREWCTL_TARGET_FLOW_RATE
+    scale_interval: float = BREWCTL_SCALE_READ_INTERVAL
+    valve_interval: float = BREWCTL_VALVE_INTERVAL_SECONDS
+    target_weight: float = BREWCTL_TARGET_WEIGHT_GRAMS
+    vessel_weight: float = BREWCTL_VESSEL_WEIGHT_GRAMS
+    epsilon: float = BREWCTL_EPSILON
     strategy: BrewStrategyType = BrewStrategyType.DEFAULT
     strategy_params: Dict[str, Any] = {}
 

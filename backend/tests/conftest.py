@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-# Add src to path so we can import brewserver
+# Add src to path so we can import brewctl
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
@@ -56,32 +56,32 @@ def mock_time_series():
 def client(mock_scale, mock_valve, mock_time_series):
     """
     Create a TestClient with mocked dependencies.
-    This patches the module-level variables in brewserver.server.
+    This patches the module-level variables in brewctl.server.
     """
     # Patch the module-level objects before importing app
-    with patch("brewserver.server.create_scale", return_value=mock_scale), \
-         patch("brewserver.server.create_valve", return_value=mock_valve), \
-         patch("brewserver.server.create_time_series", return_value=mock_time_series), \
-         patch("brewserver.server.scale", mock_scale), \
-         patch("brewserver.server.valve", mock_valve), \
-         patch("brewserver.server.time_series", mock_time_series):
+    with patch("brewctl.server.create_scale", return_value=mock_scale), \
+         patch("brewctl.server.create_valve", return_value=mock_valve), \
+         patch("brewctl.server.create_time_series", return_value=mock_time_series), \
+         patch("brewctl.server.scale", mock_scale), \
+         patch("brewctl.server.valve", mock_valve), \
+         patch("brewctl.server.time_series", mock_time_series):
 
         # Import app after patching
-        from brewserver.server import app
+        from brewctl.server import app
 
         # Create client and yield
         with TestClient(app) as test_client:
             yield test_client
 
     # Reset global state after each test
-    import brewserver.server as server_module
+    import brewctl.server as server_module
     server_module.cur_brew = None
 
 
 @pytest.fixture(autouse=True)
 def reset_globals():
     """Reset global state before each test."""
-    import brewserver.server as server_module
+    import brewctl.server as server_module
     server_module.cur_brew = None
     yield
     # Cleanup after test

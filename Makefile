@@ -2,7 +2,7 @@ dev:
 	docker compose build && docker compose up 
 
 build-prod-image:
-	docker compose -f unified-docker-compose.yml build  --build-arg COLDBREW_FRONTEND_API_URL=${COLDBREW_FRONTEND_API_URL} && docker compose -f unified-docker-compose.yml up -d
+	docker compose -f unified-docker-compose.yml build  --build-arg BREWCTL_FRONTEND_API_URL=${COLDBREW_FRONTEND_API_URL} && docker compose -f unified-docker-compose.yml up -d
 
 testBackend:
 	cd backend && pytest tests

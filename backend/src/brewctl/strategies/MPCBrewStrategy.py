@@ -3,8 +3,8 @@ from typing import Dict, Any, Tuple, Optional
 
 from config import *
 from model import ValveCommand, BrewStrategyType
-from brewserver.log import logger
-from brewserver.strategies.DefaultBrewStrategy import (
+from brewctl.log import logger
+from brewctl.strategies.DefaultBrewStrategy import (
     AbstractBrewStrategy,
     register_strategy,
     _extract_float,

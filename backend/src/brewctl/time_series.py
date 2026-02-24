@@ -6,7 +6,7 @@ from log import logger
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from retry import retry
-from config import COLDBREW_VALVE_INTERVAL_SECONDS
+from config import BREWCTL_VALVE_INTERVAL_SECONDS
 
 
 class AbstractTimeSeries(ABC):
@@ -31,7 +31,7 @@ class AbstractTimeSeries(ABC):
         pass
 
     @abstractmethod
-    def get_recent_weight_readings(self, duration_seconds: int = COLDBREW_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
         
@@ -85,7 +85,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         return result.get_value()
 
     @retry(tries=10, delay=4)
-    def get_recent_weight_readings(self, duration_seconds: int = COLDBREW_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
         
@@ -163,7 +163,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         built-in aggregate.rate() function.
         """
         # Read raw sequential weight values (aligned with VALVE_INTERVAL)
-        readings = self.get_recent_weight_readings(duration_seconds=COLDBREW_VALVE_INTERVAL_SECONDS)
+        readings = self.get_recent_weight_readings(duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS)
         
         if not readings:
             logger.warning("No weight readings available for flow rate calculation")
@@ -216,7 +216,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         self, 
         start_time: datetime, 
         end_time: datetime,
-        window_seconds: float = COLDBREW_VALVE_INTERVAL_SECONDS
+        window_seconds: float = BREWCTL_VALVE_INTERVAL_SECONDS
     ) -> List[float]:
         """
         Calculate flow rates for each time window during a brew.

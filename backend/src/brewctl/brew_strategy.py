@@ -1,5 +1,5 @@
 # Re-export everything from strategies module for backward compatibility
-from brewserver.strategies.DefaultBrewStrategy import (
+from brewctl.strategies.DefaultBrewStrategy import (
     AbstractBrewStrategy,
     DefaultBrewStrategy,
     BREW_STRATEGY_REGISTRY,
@@ -7,12 +7,12 @@ from brewserver.strategies.DefaultBrewStrategy import (
     _extract_float,
     create_brew_strategy,
 )
-from brewserver.strategies.PIDBrewStrategy import PIDBrewStrategy
-from brewserver.strategies.MPCBrewStrategy import MPCBrewStrategy
-from brewserver.strategies.KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
-from brewserver.strategies.SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
-from brewserver.strategies.AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
-from brewserver.strategies.kalman_filter import KalmanFilter
+from brewctl.strategies.PIDBrewStrategy import PIDBrewStrategy
+from brewctl.strategies.MPCBrewStrategy import MPCBrewStrategy
+from brewctl.strategies.KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
+from brewctl.strategies.SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
+from brewctl.strategies.AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
+from brewctl.strategies.kalman_filter import KalmanFilter
 
 __all__ = [
     "AbstractBrewStrategy",

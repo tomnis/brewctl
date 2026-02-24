@@ -3,7 +3,7 @@ from typing import Dict, Any, Type, Tuple, Optional
 
 from config import *
 from model import *
-from brewserver.log import logger
+from brewctl.log import logger
 
 
 # Strategy Registry

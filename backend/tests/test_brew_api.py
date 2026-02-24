@@ -1,6 +1,6 @@
 """
 Tests for brew API endpoints.
-Migrated from backend/src/brewserver/test_server.py
+Migrated from backend/src/brewctl/test_server.py
 """
 import time
 

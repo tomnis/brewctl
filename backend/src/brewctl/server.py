@@ -15,13 +15,31 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
+from config import (
+    BREWCTL_IS_PROD,
+    BREWCTL_SCALE_MAC_ADDRESS,
+    BREWCTL_INFLUXDB_URL,
+    BREWCTL_INFLUXDB_TOKEN,
+    BREWCTL_INFLUXDB_ORG,
+    BREWCTL_INFLUXDB_BUCKET,
+    BREWCTL_FRONTEND_ORIGIN,
+    BREWCTL_FRONTEND_API_URL,
+    BREWCTL_SCALE_READ_INTERVAL,
+    BREWCTL_TARGET_FLOW_RATE,
+    BREWCTL_EPSILON,
+    BREWCTL_VALVE_INTERVAL_SECONDS,
+    BREWCTL_TARGET_WEIGHT_GRAMS,
+    BREWCTL_VESSEL_WEIGHT_GRAMS,
+)
+
+
 # WebSocket push interval in seconds
-WS_PUSH_INTERVAL = float(os.getenv("WS_PUSH_INTERVAL", "1.0"))
-logger.info(f"WS_PUSH_INTERVAL = {WS_PUSH_INTERVAL}")
+BREWCTL_WS_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_PUSH_INTERVAL", "1.0"))
+logger.info(f"BREWCTL_WS_PUSH_INTERVAL = {BREWCTL_WS_PUSH_INTERVAL}")
 
 # Health WebSocket push interval (slower, every 5 seconds)
-WS_HEALTH_PUSH_INTERVAL = float(os.getenv("WS_HEALTH_PUSH_INTERVAL", "5.0"))
-logger.info(f"WS_HEALTH_PUSH_INTERVAL = {WS_HEALTH_PUSH_INTERVAL}")
+BREWCTL_WS_HEALTH_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_HEALTH_PUSH_INTERVAL", "5.0"))
+logger.info(f"BREWCTL_WS_HEALTH_PUSH_INTERVAL = {BREWCTL_WS_HEALTH_PUSH_INTERVAL}")
 
 
 from pydantic import field_validator
@@ -52,10 +70,10 @@ from datetime import datetime, timezone
 cur_brew: Brew | None = None
 
 def create_scale() -> AbstractScale:
-    if COLDBREW_IS_PROD:
+    if BREWCTL_IS_PROD:
         logger.info("Initializing production [ac lunar] scale...")
         from pi.LunarScale import LunarScale
-        s: AbstractScale = LunarScale(COLDBREW_SCALE_MAC_ADDRESS)
+        s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
     else:
         logger.info("Initializing mock scale...")
         from scale import MockScale
@@ -64,7 +82,7 @@ def create_scale() -> AbstractScale:
 
 
 def create_valve() -> AbstractValve:
-    if COLDBREW_IS_PROD:
+    if BREWCTL_IS_PROD:
         logger.info("Initializing production valve...")
         from pi.MotorKitValve import MotorKitValve
         v: AbstractValve = MotorKitValve()
@@ -79,10 +97,10 @@ def create_time_series() -> InfluxDBTimeSeries:
     logger.info("Initializing InfluxDB time series...")
 
     ts: AbstractTimeSeries = InfluxDBTimeSeries(
-        url=COLDBREW_INFLUXDB_URL,
-        token=COLDBREW_INFLUXDB_TOKEN,
-        org=COLDBREW_INFLUXDB_ORG,
-        bucket=COLDBREW_INFLUXDB_BUCKET,
+        url=BREWCTL_INFLUXDB_URL,
+        token=BREWCTL_INFLUXDB_TOKEN,
+        org=BREWCTL_INFLUXDB_ORG,
+        bucket=BREWCTL_INFLUXDB_BUCKET,
     )
     return ts
 
@@ -118,8 +136,8 @@ app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:5173",
-    COLDBREW_FRONTEND_API_URL,
-    COLDBREW_FRONTEND_ORIGIN,
+    BREWCTL_FRONTEND_API_URL,
+    BREWCTL_FRONTEND_ORIGIN,
     "localhost:5173"
 ]
 
@@ -327,7 +345,7 @@ async def brew_step_task(brew_id, strategy):
             if cur_brew.status in (BrewState.BREWING, BrewState.ERROR):
                 # get the current flow rate and weight
                 # Use time_started to filter out readings from previous brews
-                readings = time_series.get_recent_weight_readings(duration_seconds=COLDBREW_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
+                readings = time_series.get_recent_weight_readings(duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
                 current_flow_rate = time_series.calculate_flow_rate_from_derivatives(readings) if readings else None
                 current_weight = time_series.get_current_weight()
                 (valve_command, interval) = strategy.step(current_flow_rate, current_weight)
@@ -375,12 +393,12 @@ def _build_base_params(req: StartBrewRequest) -> dict:
 def _get_default_base_params() -> dict:
     """Get default base parameters from config."""
     return {
-        "target_flow_rate": COLDBREW_TARGET_FLOW_RATE,
-        "scale_interval": COLDBREW_SCALE_READ_INTERVAL,
-        "valve_interval": COLDBREW_VALVE_INTERVAL_SECONDS,
-        "target_weight": COLDBREW_TARGET_WEIGHT_GRAMS,
-        "vessel_weight": COLDBREW_VESSEL_WEIGHT_GRAMS,
-        "epsilon": COLDBREW_EPSILON,
+        "target_flow_rate": BREWCTL_TARGET_FLOW_RATE,
+        "scale_interval": BREWCTL_SCALE_READ_INTERVAL,
+        "valve_interval": BREWCTL_VALVE_INTERVAL_SECONDS,
+        "target_weight": BREWCTL_TARGET_WEIGHT_GRAMS,
+        "vessel_weight": BREWCTL_VESSEL_WEIGHT_GRAMS,
+        "epsilon": BREWCTL_EPSILON,
     }
 
 
@@ -425,7 +443,7 @@ async def start_brew(req: StartBrewRequest | None = None):
         cur_brew = Brew(id=new_id, status=BrewState.BREWING, time_started=datetime.now(timezone.utc), target_weight=target_weight, vessel_weight=vessel_weight, strategy=strategy_type)
 
         # start scale read and brew tasks
-        asyncio.create_task(collect_scale_data_task(cur_brew.id, COLDBREW_SCALE_READ_INTERVAL))
+        asyncio.create_task(collect_scale_data_task(cur_brew.id, BREWCTL_SCALE_READ_INTERVAL))
         asyncio.create_task(brew_step_task(new_id, strategy))
         return StartBrewResponse(status="started", brew_id=cur_brew.id)
     else:
@@ -481,7 +499,7 @@ async def brew_status():
     else:
         timestamp = datetime.now(timezone.utc)
         # Use time_started to filter out readings from previous brews
-        readings = time_series.get_recent_weight_readings(duration_seconds=COLDBREW_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
+        readings = time_series.get_recent_weight_readings(duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
         current_flow_rate = time_series.calculate_flow_rate_from_derivatives(readings) if readings else None
         current_weight = scale.get_weight()
         if current_weight is None:
@@ -536,8 +554,8 @@ async def get_brew_quality(brew_id: str):
         time_completed = cur_brew.time_completed
         target_weight = cur_brew.target_weight
         vessel_weight = cur_brew.vessel_weight
-        target_flow_rate = COLDBREW_TARGET_FLOW_RATE
-        epsilon = COLDBREW_EPSILON
+        target_flow_rate = BREWCTL_TARGET_FLOW_RATE
+        epsilon = BREWCTL_EPSILON
         
         # Get actual final weight from the last reading
         readings = time_series.get_weight_readings_in_range(time_started, time_completed)
@@ -625,7 +643,7 @@ async def websocket_brew_status(websocket: WebSocket):
             serialized = serialize_status(status)
             await websocket.send_json(serialized)
             
-            await asyncio.sleep(WS_PUSH_INTERVAL)
+            await asyncio.sleep(BREWCTL_WS_PUSH_INTERVAL)
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected from brew status")
     except Exception as e:
@@ -652,7 +670,7 @@ async def websocket_health(websocket: WebSocket):
             
             await websocket.send_json(health)
             
-            await asyncio.sleep(WS_HEALTH_PUSH_INTERVAL)
+            await asyncio.sleep(BREWCTL_WS_HEALTH_PUSH_INTERVAL)
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected from health status")
     except Exception as e:
@@ -673,7 +691,7 @@ async def sse_brew_status_generator() -> AsyncGenerator[str, None]:
             # Format as SSE event
             yield f"data: {json.dumps(serialized)}\n\n"
             
-            await asyncio.sleep(WS_PUSH_INTERVAL)
+            await asyncio.sleep(BREWCTL_WS_PUSH_INTERVAL)
     except asyncio.CancelledError:
         logger.info("SSE brew status connection closed by client")
         raise
@@ -712,7 +730,7 @@ async def sse_health_generator() -> AsyncGenerator[str, None]:
             # Format as SSE event
             yield f"data: {json.dumps(health)}\n\n"
             
-            await asyncio.sleep(WS_HEALTH_PUSH_INTERVAL)
+            await asyncio.sleep(BREWCTL_WS_HEALTH_PUSH_INTERVAL)
     except asyncio.CancelledError:
         logger.info("SSE health connection closed by client")
         raise
@@ -786,7 +804,7 @@ def read_flow_rate():
     global cur_brew
     # If there's an active brew, filter by time_started to avoid stale data from previous brews
     if cur_brew is not None and cur_brew.time_started is not None:
-        readings = time_series.get_recent_weight_readings(duration_seconds=COLDBREW_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
+        readings = time_series.get_recent_weight_readings(duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter=cur_brew.time_started)
         flow_rate = time_series.calculate_flow_rate_from_derivatives(readings) if readings else None
     else:
         flow_rate = time_series.get_current_flow_rate()

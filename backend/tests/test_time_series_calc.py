@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewserver.time_series import InfluxDBTimeSeries, AbstractTimeSeries
+from brewctl.time_series import InfluxDBTimeSeries, AbstractTimeSeries
 
 
 def _make_ts():
@@ -485,7 +485,7 @@ class TestInfluxDBTimeSeriesInitialization:
 
     def test_initialization_creates_influxdb_client(self):
         """Initialization should create InfluxDB client."""
-        with patch('brewserver.time_series.InfluxDBClient') as mock_client:
+        with patch('brewctl.time_series.InfluxDBClient') as mock_client:
             ts = InfluxDBTimeSeries(
                 url="http://localhost:8086",
                 token="my-token",

@@ -12,7 +12,7 @@ import pytest
 
 def test_sse_brew_status_endpoint_registered(client):
     """Test that the SSE brew status endpoint is registered."""
-    from brewserver.server import app
+    from brewctl.server import app
     
     # Check route exists
     routes = [route.path for route in app.routes]
@@ -21,7 +21,7 @@ def test_sse_brew_status_endpoint_registered(client):
 
 def test_sse_health_endpoint_registered(client):
     """Test that the SSE health endpoint is registered."""
-    from brewserver.server import app
+    from brewctl.server import app
     
     # Check route exists
     routes = [route.path for route in app.routes]
@@ -31,7 +31,7 @@ def test_sse_health_endpoint_registered(client):
 def test_sse_brew_status_no_brew_data(client):
     """Test that brew status returns correct data structure when no brew is in progress."""
     import asyncio
-    from brewserver.server import brew_status
+    from brewctl.server import brew_status
     
     # Run the async function
     result = asyncio.run(brew_status())
@@ -41,7 +41,7 @@ def test_sse_brew_status_no_brew_data(client):
 
 def test_sse_health_data_structure(client):
     """Test that health returns correct data structure."""
-    from brewserver.server import get_component_health
+    from brewctl.server import get_component_health
     
     # Call the function (it's not async)
     result = get_component_health()
@@ -59,7 +59,7 @@ def test_sse_brew_status_with_active_brew(client):
 
     try:
         import asyncio
-        from brewserver.server import brew_status
+        from brewctl.server import brew_status
         
         # Run the async function
         result = asyncio.run(brew_status())

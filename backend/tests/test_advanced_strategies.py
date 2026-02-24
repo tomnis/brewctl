@@ -8,14 +8,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewserver.brew_strategy import (
+from brewctl.brew_strategy import (
     PIDBrewStrategy,
     MPCBrewStrategy,
     KalmanPIDBrewStrategy,
     AdaptiveGainSchedulingBrewStrategy,
     SmithPredictorAdvancedBrewStrategy,
 )
-from brewserver.model import ValveCommand as _VC
+from brewctl.model import ValveCommand as _VC
 
 
 BASE_PARAMS = {

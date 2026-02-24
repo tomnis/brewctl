@@ -8,10 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add src to path so we can import brewserver
+# Add src to path so we can import brewctl
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewserver.scale import AbstractScale, MockScale
+from brewctl.scale import AbstractScale, MockScale
 
 
 class TestMockScale:
