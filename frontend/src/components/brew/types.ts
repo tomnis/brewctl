@@ -34,7 +34,7 @@ export type BrewContextShape = {
   brewError: BrewError | null;
   isFlipped: boolean;
   fetchBrewInProgress: () => Promise<void>;
-  stopPolling: () => void;
+  stopConnection: () => void;
   toggleFlip: () => void;
   handlePause: () => Promise<void>;
   handleResume: () => Promise<void>;

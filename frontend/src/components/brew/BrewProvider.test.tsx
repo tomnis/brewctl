@@ -10,35 +10,35 @@ vi.mock('./constants', () => ({
   resumeBrew: vi.fn(),
 }));
 
-// Mock useBrewPolling
-vi.mock('./useBrewPolling', () => ({
-  useBrewPolling: vi.fn(() => ({
+// Mock useBrewStatus
+vi.mock('./useBrewStatus', () => ({
+  useBrewStatus: vi.fn(() => ({
     brewInProgress: null,
     fetchBrewInProgress: vi.fn(),
-    startPolling: vi.fn(),
-    stopPolling: vi.fn(),
+    startConnection: vi.fn(),
+    stopConnection: vi.fn(),
   })),
 }));
 
-import { useBrewPolling } from './useBrewPolling';
+import { useBrewStatus } from './useBrewStatus';
 
 describe('BrewProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  const mockUseBrewPolling = useBrewPolling as ReturnType<typeof vi.fn>;
+  const mockUseBrewStatus = useBrewStatus as ReturnType<typeof vi.fn>;
 
   const createMockHookReturn = (overrides = {}) => ({
     brewInProgress: null,
     fetchBrewInProgress: vi.fn(),
-    startPolling: vi.fn(),
-    stopPolling: vi.fn(),
+    startConnection: vi.fn(),
+    stopConnection: vi.fn(),
     ...overrides,
   });
 
   it('should provide default context values', async () => {
-    mockUseBrewPolling.mockReturnValue(createMockHookReturn());
+    mockUseBrewStatus.mockReturnValue(createMockHookReturn());
 
     const { result } = renderHook(() => useBrewContext(), {
       wrapper: BrewProvider,
@@ -50,26 +50,26 @@ describe('BrewProvider', () => {
 
     expect(result.current.isFlipped).toBe(false);
     expect(typeof result.current.fetchBrewInProgress).toBe('function');
-    expect(typeof result.current.stopPolling).toBe('function');
+    expect(typeof result.current.stopConnection).toBe('function');
     expect(typeof result.current.toggleFlip).toBe('function');
     expect(typeof result.current.handlePause).toBe('function');
     expect(typeof result.current.handleResume).toBe('function');
   });
 
-  it('should start polling on mount', () => {
-    const startPolling = vi.fn();
-    mockUseBrewPolling.mockReturnValue(createMockHookReturn({ startPolling }));
+  it('should start connection on mount', () => {
+    const startConnection = vi.fn();
+    mockUseBrewStatus.mockReturnValue(createMockHookReturn({ startConnection }));
 
     renderHook(() => useBrewContext(), {
       wrapper: BrewProvider,
     });
 
-    expect(startPolling).toHaveBeenCalled();
+    expect(startConnection).toHaveBeenCalled();
   });
 
-  it('should stop polling on unmount', () => {
-    const stopPolling = vi.fn();
-    mockUseBrewPolling.mockReturnValue(createMockHookReturn({ stopPolling }));
+  it('should stop connection on unmount', () => {
+    const stopConnection = vi.fn();
+    mockUseBrewStatus.mockReturnValue(createMockHookReturn({ stopConnection }));
 
     const { unmount } = renderHook(() => useBrewContext(), {
       wrapper: BrewProvider,
@@ -77,7 +77,7 @@ describe('BrewProvider', () => {
 
     unmount();
 
-    expect(stopPolling).toHaveBeenCalled();
+    expect(stopConnection).toHaveBeenCalled();
   });
 
   it('should set isFlipped to true when brew_state is brewing', async () => {
@@ -95,7 +95,7 @@ describe('BrewProvider', () => {
       valve_position: 50,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -123,7 +123,7 @@ describe('BrewProvider', () => {
       valve_position: 50,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -151,7 +151,7 @@ describe('BrewProvider', () => {
       valve_position: 50,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -179,7 +179,7 @@ describe('BrewProvider', () => {
       valve_position: null,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -207,7 +207,7 @@ describe('BrewProvider', () => {
       valve_position: 100,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -221,7 +221,7 @@ describe('BrewProvider', () => {
   });
 
   it('should toggle isFlipped when toggleFlip is called', async () => {
-    mockUseBrewPolling.mockReturnValue(createMockHookReturn());
+    mockUseBrewStatus.mockReturnValue(createMockHookReturn());
 
     const { result } = renderHook(() => useBrewContext(), {
       wrapper: BrewProvider,
@@ -248,7 +248,7 @@ describe('BrewProvider', () => {
 
   it('should call pauseBrew and fetchBrewInProgress when handlePause is called', async () => {
     const fetchBrewInProgress = vi.fn();
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ fetchBrewInProgress })
     );
 
@@ -266,7 +266,7 @@ describe('BrewProvider', () => {
 
   it('should call resumeBrew and fetchBrewInProgress when handleResume is called', async () => {
     const fetchBrewInProgress = vi.fn();
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ fetchBrewInProgress })
     );
 
@@ -282,7 +282,7 @@ describe('BrewProvider', () => {
     expect(fetchBrewInProgress).toHaveBeenCalled();
   });
 
-  it('should pass brewInProgress from useBrewPolling to context', async () => {
+  it('should pass brewInProgress from useBrewStatus to context', async () => {
     const mockBrewInProgress = {
       brew_id: 'test-123',
       current_flow_rate: '0.05',
@@ -297,7 +297,7 @@ describe('BrewProvider', () => {
       valve_position: 50,
     };
 
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ brewInProgress: mockBrewInProgress })
     );
 
@@ -310,22 +310,22 @@ describe('BrewProvider', () => {
     });
   });
 
-  it('should pass through stopPolling from useBrewPolling', () => {
-    const stopPolling = vi.fn();
-    mockUseBrewPolling.mockReturnValue(createMockHookReturn({ stopPolling }));
+  it('should pass through stopConnection from useBrewStatus', () => {
+    const stopConnection = vi.fn();
+    mockUseBrewStatus.mockReturnValue(createMockHookReturn({ stopConnection }));
 
     const { result } = renderHook(() => useBrewContext(), {
       wrapper: BrewProvider,
     });
 
-    result.current.stopPolling();
+    result.current.stopConnection();
 
-    expect(stopPolling).toHaveBeenCalled();
+    expect(stopConnection).toHaveBeenCalled();
   });
 
-  it('should pass through fetchBrewInProgress from useBrewPolling', async () => {
+  it('should pass through fetchBrewInProgress from useBrewStatus', async () => {
     const fetchBrewInProgress = vi.fn();
-    mockUseBrewPolling.mockReturnValue(
+    mockUseBrewStatus.mockReturnValue(
       createMockHookReturn({ fetchBrewInProgress })
     );
 

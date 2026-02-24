@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import { BrewProvider } from './BrewProvider';
-import { useBrewPolling } from './useBrewPolling';
+import { useBrewStatus } from './useBrewStatus';
 import * as constants from './constants';
 import { BrewInProgress } from './types';
 
@@ -30,14 +30,14 @@ vi.mock('./constants', () => ({
   nudgeClose: vi.fn(),
 }));
 
-// Mock useBrewPolling
-vi.mock('./useBrewPolling', () => ({
-  useBrewPolling: vi.fn(() => ({
+// Mock useBrewStatus
+vi.mock('./useBrewStatus', () => ({
+  useBrewStatus: vi.fn(() => ({
     brewInProgress: null,
     brewError: null,
     fetchBrewInProgress: vi.fn(),
-    startPolling: vi.fn(),
-    stopPolling: vi.fn(),
+    startConnection: vi.fn(),
+    stopConnection: vi.fn(),
   })),
 }));
 
@@ -49,14 +49,14 @@ describe('NudgeButtons', () => {
     vi.clearAllMocks();
   });
 
-  const mockUseBrewPolling = useBrewPolling as ReturnType<typeof vi.fn>;
+  const mockUseBrewStatus = useBrewStatus as ReturnType<typeof vi.fn>;
 
   const createMockHookReturn = (overrides = {}) => ({
     brewInProgress: null,
     brewError: null,
     fetchBrewInProgress: vi.fn(),
-    startPolling: vi.fn(),
-    stopPolling: vi.fn(),
+    startConnection: vi.fn(),
+    stopConnection: vi.fn(),
     ...overrides,
   });
 
@@ -85,7 +85,7 @@ describe('NudgeButtons', () => {
   describe('rendering', () => {
     it('should render nudge buttons when brew is in progress with state "brewing"', async () => {
       const mockBrewInProgress = createMockBrewInProgress('brewing');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ brewInProgress: mockBrewInProgress })
       );
 
@@ -98,7 +98,7 @@ describe('NudgeButtons', () => {
     });
 
     it('should NOT render nudge buttons when brewInProgress is null', async () => {
-      mockUseBrewPolling.mockReturnValue(createMockHookReturn());
+      mockUseBrewStatus.mockReturnValue(createMockHookReturn());
 
       renderWithProvider();
 
@@ -110,7 +110,7 @@ describe('NudgeButtons', () => {
 
     it('should NOT render nudge buttons when brew state is "paused"', async () => {
       const mockBrewInProgress = createMockBrewInProgress('paused');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ brewInProgress: mockBrewInProgress })
       );
 
@@ -124,7 +124,7 @@ describe('NudgeButtons', () => {
 
     it('should NOT render nudge buttons when brew state is "completed"', async () => {
       const mockBrewInProgress = createMockBrewInProgress('completed');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ brewInProgress: mockBrewInProgress })
       );
 
@@ -138,7 +138,7 @@ describe('NudgeButtons', () => {
 
     it('should NOT render nudge buttons when brew state is "idle"', async () => {
       const mockBrewInProgress = createMockBrewInProgress('idle');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ brewInProgress: mockBrewInProgress })
       );
 
@@ -152,7 +152,7 @@ describe('NudgeButtons', () => {
 
     it('should NOT render nudge buttons when brew state is "error"', async () => {
       const mockBrewInProgress = createMockBrewInProgress('error');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ brewInProgress: mockBrewInProgress })
       );
 
@@ -169,7 +169,7 @@ describe('NudgeButtons', () => {
     it('should call nudgeOpen when Nudge Open button is clicked', async () => {
       const fetchBrewInProgress = vi.fn();
       const mockBrewInProgress = createMockBrewInProgress('brewing');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ 
           brewInProgress: mockBrewInProgress,
           fetchBrewInProgress 
@@ -189,7 +189,7 @@ describe('NudgeButtons', () => {
     it('should call nudgeClose when Nudge Close button is clicked', async () => {
       const fetchBrewInProgress = vi.fn();
       const mockBrewInProgress = createMockBrewInProgress('brewing');
-      mockUseBrewPolling.mockReturnValue(
+      mockUseBrewStatus.mockReturnValue(
         createMockHookReturn({ 
           brewInProgress: mockBrewInProgress,
           fetchBrewInProgress 

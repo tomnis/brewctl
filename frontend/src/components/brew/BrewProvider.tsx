@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { useBrewPolling } from "./useBrewPolling";
+import { useBrewStatus } from "./useBrewStatus";
 import { BrewContextShape } from "./types";
 import { pauseBrew, resumeBrew, nudgeOpen, nudgeClose } from "./constants";
 
@@ -8,7 +8,7 @@ const BrewContext = createContext<BrewContextShape>({
   brewError: null,
   isFlipped: false,
   fetchBrewInProgress: async () => {},
-  stopPolling: () => {},
+  stopConnection: () => {},
   toggleFlip: () => {},
   handlePause: async () => {},
   handleResume: async () => {},
@@ -20,13 +20,13 @@ const BrewContext = createContext<BrewContextShape>({
 export const useBrewContext = () => useContext(BrewContext);
 
 export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { brewInProgress, brewError, fetchBrewInProgress, startPolling, stopPolling } = useBrewPolling();
+  const { brewInProgress, brewError, fetchBrewInProgress, startConnection, stopConnection } = useBrewStatus();
   const [isFlipped, setIsFlipped] = useState(false);
 
   useEffect(() => {
-    startPolling();
-    return () => stopPolling();
-  }, [startPolling, stopPolling]);
+    startConnection();
+    return () => stopConnection();
+  }, [startConnection, stopConnection]);
 
   // When brewInProgress changes, update isFlipped to show correct side of card
   useEffect(() => {
@@ -58,7 +58,7 @@ export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [fetchBrewInProgress]);
 
   const dismissError = useCallback(() => {
-    // Error is managed by useBrewPolling, so this is a no-op
+    // Error is managed by useBrewStatus, so this is a no-op
     // The error will be cleared when the brew state changes
   }, []);
 
@@ -68,7 +68,7 @@ export const BrewProvider: React.FC<{ children: React.ReactNode }> = ({ children
       brewError,
       isFlipped, 
       fetchBrewInProgress, 
-      stopPolling, 
+      stopConnection, 
       toggleFlip, 
       handlePause, 
       handleResume,

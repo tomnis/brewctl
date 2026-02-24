@@ -5,7 +5,7 @@ import { BrewInProgress, BrewError, DataPoint } from "./types";
 // Max history points for trend visualization
 const MAX_HISTORY_POINTS = 128;
 
-export function useBrewPolling() {
+export function useBrewStatus() {
   const [brewInProgress, setBrewInProgress] = useState<BrewInProgress | null>(null);
   const [brewError, setBrewError] = useState<BrewError | null>(null);
 
@@ -91,11 +91,11 @@ export function useBrewPolling() {
     }
   }, []);
 
-  const startPolling = useCallback(() => {
+  const startConnection = useCallback(() => {
     connect();
   }, [connect]);
 
-  const stopPolling = useCallback(() => {
+  const stopConnection = useCallback(() => {
     disconnect();
     setBrewInProgress(null);
     setBrewError(null);
@@ -115,5 +115,5 @@ export function useBrewPolling() {
     }
   }, [connect]);
 
-  return { brewInProgress, brewError, fetchBrewInProgress, startPolling, stopPolling };
+  return { brewInProgress, brewError, fetchBrewInProgress, startConnection, stopConnection };
 }

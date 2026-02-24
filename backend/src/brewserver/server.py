@@ -863,7 +863,3 @@ async def serve_react_app(full_path: str):
 
 
 
-if not COLDBREW_IS_PROD:
-    logger.info("running some tests...")
-    import pytest
-    exit_code = pytest.main(["--disable-warnings", "-v", "tests"])
