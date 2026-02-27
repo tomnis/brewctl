@@ -1,4 +1,4 @@
-# Cold Brewer
+# Brewctl
 
 A precision cold brew coffee brewing system with real-time flow rate control, built on a Raspberry Pi with a React frontend.
 
@@ -18,7 +18,7 @@ A precision cold brew coffee brewing system with real-time flow rate control, bu
 
 ## Architecture Overview
 
-The Cold Brewer system consists of three main components:
+The Brewctl system consists of three main components:
 
 ### Backend (Python/FastAPI)
 The backend runs on a Raspberry Pi and provides:
@@ -64,12 +64,12 @@ class AbstractScale(ABC):
 ```
 
 ### 2. Production/Development Modes
-The system runs in two modes based on the `COLDBREW_IS_PROD` environment variable:
+The system runs in two modes based on the `BREWCTL_IS_PROD` environment variable:
 
 | Mode | Scale | Valve | InfluxDB Bucket |
 |------|-------|-------|-----------------|
-| Development | MockScale | MockValve | coldbrew-dev |
-| Production | LunarScale | MotorKitValve | coldbrew |
+| Development | MockScale | MockValve | brewctl-dev |
+| Production | LunarScale | MotorKitValve | brewctl |
 
 ### 3. Real-time Monitoring
 - Scale is polled every 0.5 seconds (configurable)
@@ -209,8 +209,8 @@ The `DefaultBrewStrategy` adjusts the valve to maintain a target flow rate:
 
 ```bash
 # Clone the repository
-git clone git@github.com:tomnis/coldbrewer.git
-cd coldbrewer
+git clone git@github.com:tomnis/brewctl.git
+cd brewctl
 
 # Start all services (backend, frontend, influxdb)
 make dev
@@ -225,11 +225,11 @@ Services will be available at:
 
 ```bash
 # Set required environment variables
-export COLDBREW_INFLUXDB_URL="http://influxdb:8086"
-export COLDBREW_INFLUXDB_TOKEN="your-token"
-export COLDBREW_INFLUXDB_ORG="your-org"
-export COLDBREW_SCALE_MAC_ADDRESS="XX:XX:XX:XX:XX:XX"
-export COLDBREW_FRONTEND_API_URL="http://backend:8000/api"
+export BREWCTL_INFLUXDB_URL="http://influxdb:8086"
+export BREWCTL_INFLUXDB_TOKEN="your-token"
+export BREWCTL_INFLUXDB_ORG="your-org"
+export BREWCTL_SCALE_MAC_ADDRESS="XX:XX:XX:XX:XX:XX"
+export BREWCTL_FRONTEND_API_URL="http://backend:8000/api"
 
 # Build and run
 make build-prod-image
@@ -274,17 +274,17 @@ make build-prod-image
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `COLDBREW_IS_PROD` | `false` | Production mode flag |
-| `COLDBREW_SCALE_MAC_ADDRESS` | - | Bluetooth MAC of Lunar scale |
-| `COLDBREW_INFLUXDB_URL` | required | InfluxDB URL |
-| `COLDBREW_INFLUXDB_TOKEN` | required | InfluxDB auth token |
-| `COLDBREW_INFLUXDB_ORG` | required | InfluxDB organization |
-| `COLDBREW_INFLUXDB_BUCKET` | `coldbrew` | InfluxDB bucket name |
-| `COLDBREW_TARGET_FLOW_RATE` | `0.05` | Target flow rate (g/s) |
-| `COLDBREW_TARGET_WEIGHT_GRAMS` | `1337` | Target brew weight (g) |
-| `COLDBREW_EPSILON` | `0.008` | Flow rate tolerance |
-| `COLDBREW_VALVE_INTERVAL_SECONDS` | `90` | Valve check interval |
-| `COLDBREW_SCALE_READ_INTERVAL` | `0.5` | Scale polling interval |
+| `BREWCTL_IS_PROD` | `false` | Production mode flag |
+| `BREWCTL_SCALE_MAC_ADDRESS` | - | Bluetooth MAC of Lunar scale |
+| `BREWCTL_INFLUXDB_URL` | required | InfluxDB URL |
+| `BREWCTL_INFLUXDB_TOKEN` | required | InfluxDB auth token |
+| `BREWCTL_INFLUXDB_ORG` | required | InfluxDB organization |
+| `BREWCTL_INFLUXDB_BUCKET` | `brewctl` | InfluxDB bucket name |
+| `BREWCTL_TARGET_FLOW_RATE` | `0.05` | Target flow rate (g/s) |
+| `BREWCTL_TARGET_WEIGHT_GRAMS` | `1337` | Target brew weight (g) |
+| `BREWCTL_EPSILON` | `0.008` | Flow rate tolerance |
+| `BREWCTL_VALVE_INTERVAL_SECONDS` | `90` | Valve check interval |
+| `BREWCTL_SCALE_READ_INTERVAL` | `0.5` | Scale polling interval |
 
 ---
 
@@ -450,7 +450,7 @@ MotorKit (I2C address 0x60)
 
 3. Set environment variable:
    ```bash
-   export COLDBREW_SCALE_MAC_ADDRESS="XX:XX:XX:XX:XX:XX"
+   export BREWCTL_SCALE_MAC_ADDRESS="XX:XX:XX:XX:XX:XX"
    ```
 
 ---
@@ -460,10 +460,10 @@ MotorKit (I2C address 0x60)
 ### Project Structure
 
 ```
-coldbrewer/
+brewctl/
 ├── backend/
 │   ├── src/
-│   │   ├── brewserver/        # Main application
+│   │   ├── brewctl/           # Main application
 │   │   │   ├── server.py      # FastAPI app & endpoints
 │   │   │   ├── model.py       # Pydantic models
 │   │   │   ├── scale.py       # AbstractScale + MockScale
@@ -498,11 +498,11 @@ source bin/activate  # if using venv
 pip install -r requirements/base.txt
 
 # Development (uses mocks)
-fastapi dev src/brewserver/server.py --host 0.0.0.0 --port 8000
+fastapi dev src/brewctl/server.py --host 0.0.0.0 --port 8000
 
 # Production (uses real hardware)
-COLDBREW_IS_PROD=true COLDBREW_SCALE_MAC_ADDRESS=... \
-  COLDBREW_INFLUXDB_URL=... fastapi dev src/brewserver/server.py
+BREWCTL_IS_PROD=true BREWCTL_SCALE_MAC_ADDRESS=... \
+  BREWCTL_INFLUXDB_URL=... fastapi dev src/brewctl/server.py
 ```
 
 ### Running Frontend Directly
