@@ -6,6 +6,7 @@ from .log import logger
 BREWCTL_IS_PROD = os.environ.get('BREWCTL_IS_PROD', "false") == "true"
 logger.info(f"BREWCTL_IS_PROD = {BREWCTL_IS_PROD}")
 BREWCTL_SCALE_MAC_ADDRESS = os.environ['BREWCTL_SCALE_MAC_ADDRESS'] if BREWCTL_IS_PROD else ""
+# todo probably better to split these somehow into a
 BREWCTL_INFLUXDB_URL = os.environ['BREWCTL_INFLUXDB_URL']
 logger.info(f"BREWCTL_INFLUXDB_URL = {BREWCTL_INFLUXDB_URL}")
 BREWCTL_INFLUXDB_TOKEN = os.environ['BREWCTL_INFLUXDB_TOKEN']
