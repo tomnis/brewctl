@@ -40,30 +40,6 @@ from datetime import datetime, timezone
 # Single instance of current brew instead of separate id and state
 cur_brew: Brew | None = None
 
-def create_scale() -> AbstractScale:
-    if BREWCTL_IS_PROD:
-        logger.info("Initializing production [ac lunar] scale...")
-        from brewctl.api.pi import LunarScale
-        s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
-    else:
-        logger.info("Initializing mock scale...")
-        from brewctl.core.scale import MockScale
-        s: AbstractScale = MockScale()
-    return s
-
-
-def create_valve() -> AbstractValve:
-    if BREWCTL_IS_PROD:
-        logger.info("Initializing production valve...")
-        from brewctl.api.pi import MotorKitValve
-        v: AbstractValve = MotorKitValve()
-    else:
-        logger.info("Initializing mock valve...")
-        from brewctl.core.valve import MockValve
-        v: AbstractValve = MockValve()
-    return v
-
-
 def create_time_series() -> InfluxDBTimeSeries:
     logger.info("Initializing InfluxDB time series...")
 
