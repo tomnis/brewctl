@@ -13,21 +13,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-# WebSocket push interval in seconds
-BREWCTL_WS_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_PUSH_INTERVAL", "1.0"))
-logger.info(f"BREWCTL_WS_PUSH_INTERVAL = {BREWCTL_WS_PUSH_INTERVAL}")
-
-# Health WebSocket push interval (slower, every 5 seconds)
-BREWCTL_WS_HEALTH_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_HEALTH_PUSH_INTERVAL", "5.0"))
-logger.info(f"BREWCTL_WS_HEALTH_PUSH_INTERVAL = {BREWCTL_WS_HEALTH_PUSH_INTERVAL}")
-
-
 from pydantic import field_validator
 from typing import Annotated
 
 from brewctl.core.config import *
+from brewctl.api.config import *
 from brewctl.core.model import *
-# from config import *
 from brewctl.core.scale import AbstractScale
 from brewctl.api.brew_strategy import create_brew_strategy
 from brewctl.core.model import (

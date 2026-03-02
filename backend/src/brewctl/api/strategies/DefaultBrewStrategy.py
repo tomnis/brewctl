@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Type, Tuple, Optional
 
 from brewctl.core.config import *
+from brewctl.api.config import *
 from brewctl.core.model import *
 from brewctl.core.log import logger
 

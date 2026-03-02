@@ -2,7 +2,7 @@ import time
 
 from adafruit_motorkit import MotorKit
 from adafruit_motor import stepper
-from valve import AbstractValve, STEPS_PER_REVOLUTION
+from ..core.valve import AbstractValve, STEPS_PER_REVOLUTION
 
 
 def flip_direction(direction):

@@ -2,6 +2,7 @@ import math
 from typing import Dict, Any, Tuple, Optional
 
 from brewctl.core.config import *
+from brewctl.api.config import *
 from brewctl.core.model import ValveCommand, BrewStrategyType
 from brewctl.core.log import logger
 from .DefaultBrewStrategy import (

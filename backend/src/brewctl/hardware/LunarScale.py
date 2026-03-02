@@ -1,4 +1,4 @@
-from scale import AbstractScale
+from ..core.scale import AbstractScale
 
 from pyacaia import AcaiaScale
 from pyacaia import *
@@ -6,8 +6,8 @@ from pyacaia import *
 import pyacaia
 import time
 
-from log import logger
-from config import BREWCTL_SCALE_RECONNECT_RETRIES, BREWCTL_SCALE_RECONNECT_BASE_DELAY, BREWCTL_SCALE_RECONNECT_MAX_DELAY
+from ..core.log import logger
+from .config import BREWCTL_SCALE_RECONNECT_RETRIES, BREWCTL_SCALE_RECONNECT_BASE_DELAY, BREWCTL_SCALE_RECONNECT_MAX_DELAY
 
 
 class LunarScale(AbstractScale):
