@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-# Add src to path so we can import brewctl
+# Add src to path so we can import api
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
@@ -56,15 +56,15 @@ def mock_time_series():
 def client(mock_scale, mock_valve, mock_time_series):
     """
     Create a TestClient with mocked dependencies.
-    This patches the module-level variables in brewctl.server.
+    This patches the module-level variables in api.server.
     """
     # Patch the module-level objects before importing app
-    with patch("brewctl.server.create_scale", return_value=mock_scale), \
-         patch("brewctl.server.create_valve", return_value=mock_valve), \
-         patch("brewctl.server.create_time_series", return_value=mock_time_series), \
-         patch("brewctl.server.scale", mock_scale), \
-         patch("brewctl.server.valve", mock_valve), \
-         patch("brewctl.server.time_series", mock_time_series):
+    with patch("api.server.create_scale", return_value=mock_scale), \
+         patch("api.server.create_valve", return_value=mock_valve), \
+         patch("api.server.create_time_series", return_value=mock_time_series), \
+         patch("api.server.scale", mock_scale), \
+         patch("api.server.valve", mock_valve), \
+         patch("api.server.time_series", mock_time_series):
 
         # Import app after patching
         from brewctl.server import app

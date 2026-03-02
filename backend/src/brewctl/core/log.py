@@ -33,7 +33,7 @@ logging.basicConfig(
 #
 # needed to prevent our log entries from showing up twice
 logging.getLogger("uvicorn").propagate = False
-logger = logging.getLogger("brewctl")
+logger = logging.getLogger("api")
 logger.info("done configuring logger")
 
 # from fastapi_cli.utils.cli import CustomFormatter

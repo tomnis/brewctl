@@ -209,8 +209,8 @@ The `DefaultBrewStrategy` adjusts the valve to maintain a target flow rate:
 
 ```bash
 # Clone the repository
-git clone git@github.com:tomnis/brewctl.git
-cd brewctl
+git clone git@github.com:tomnis/api.git
+cd api
 
 # Start all services (backend, frontend, influxdb)
 make dev
@@ -498,11 +498,11 @@ source bin/activate  # if using venv
 pip install -r requirements/base.txt
 
 # Development (uses mocks)
-fastapi dev src/brewctl/server.py --host 0.0.0.0 --port 8000
+fastapi dev src/api/server.py --host 0.0.0.0 --port 8000
 
 # Production (uses real hardware)
 BREWCTL_IS_PROD=true BREWCTL_SCALE_MAC_ADDRESS=... \
-  BREWCTL_INFLUXDB_URL=... fastapi dev src/brewctl/server.py
+  BREWCTL_INFLUXDB_URL=... fastapi dev src/api/server.py
 ```
 
 ### Running Frontend Directly

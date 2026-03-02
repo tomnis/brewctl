@@ -4,34 +4,14 @@ import time
 import os
 import json
 import traceback
-from typing import Optional
 from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
-from log import logger
+from backend.src.brewctl.core.log import logger
 from fastapi import FastAPI, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-
-from config import (
-    BREWCTL_IS_PROD,
-    BREWCTL_SCALE_MAC_ADDRESS,
-    BREWCTL_INFLUXDB_URL,
-    BREWCTL_INFLUXDB_TOKEN,
-    BREWCTL_INFLUXDB_ORG,
-    BREWCTL_INFLUXDB_BUCKET,
-    BREWCTL_FRONTEND_ORIGIN,
-    BREWCTL_FRONTEND_API_URL,
-    BREWCTL_SCALE_READ_INTERVAL,
-    BREWCTL_TARGET_FLOW_RATE,
-    BREWCTL_EPSILON,
-    BREWCTL_VALVE_INTERVAL_SECONDS,
-    BREWCTL_TARGET_WEIGHT_GRAMS,
-    BREWCTL_VESSEL_WEIGHT_GRAMS,
-)
-
 
 # WebSocket push interval in seconds
 BREWCTL_WS_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_PUSH_INTERVAL", "1.0"))
@@ -46,23 +26,22 @@ from pydantic import field_validator
 from typing import Annotated
 
 # from config import *
-from scale import AbstractScale
-from brew_strategy import create_brew_strategy, BREW_STRATEGY_REGISTRY
-from model import *
-from model import (
+from backend.src.brewctl.core.scale import AbstractScale
+from brew_strategy import create_brew_strategy
+from backend.src.brewctl.core.model import *
+from backend.src.brewctl.core.model import (
     Brew,
     BrewState,
     StartBrewResponse,
     BrewCommandResponse,
     FlowRateResponse,
-    BrewErrorResponse,
     HealthStatus,
     HealthResponse,
 )
-from valve import AbstractValve
+from backend.src.brewctl.core.valve import AbstractValve
 from time_series import AbstractTimeSeries
 from time_series import InfluxDBTimeSeries
-from brew_quality import compute_quality_score, get_score_grade, BrewQualityMetrics
+from brew_quality import compute_quality_score, get_score_grade
 from datetime import datetime, timezone
 
 
@@ -72,11 +51,11 @@ cur_brew: Brew | None = None
 def create_scale() -> AbstractScale:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production [ac lunar] scale...")
-        from pi.LunarScale import LunarScale
+        from backend.src.brewctl.api.pi import LunarScale
         s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
     else:
         logger.info("Initializing mock scale...")
-        from scale import MockScale
+        from backend.src.brewctl.core.scale import MockScale
         s: AbstractScale = MockScale()
     return s
 
@@ -84,11 +63,11 @@ def create_scale() -> AbstractScale:
 def create_valve() -> AbstractValve:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production valve...")
-        from pi.MotorKitValve import MotorKitValve
+        from backend.src.brewctl.api.pi import MotorKitValve
         v: AbstractValve = MotorKitValve()
     else:
         logger.info("Initializing mock valve...")
-        from valve import MockValve
+        from backend.src.brewctl.core.valve import MockValve
         v: AbstractValve = MockValve()
     return v
 

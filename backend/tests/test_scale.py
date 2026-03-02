@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add src to path so we can import brewctl
+# Add src to path so we can import api
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from brewctl.scale import AbstractScale, MockScale

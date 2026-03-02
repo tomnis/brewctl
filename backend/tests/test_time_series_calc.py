@@ -485,7 +485,7 @@ class TestInfluxDBTimeSeriesInitialization:
 
     def test_initialization_creates_influxdb_client(self):
         """Initialization should create InfluxDB client."""
-        with patch('brewctl.time_series.InfluxDBClient') as mock_client:
+        with patch('api.time_series.InfluxDBClient') as mock_client:
             ts = InfluxDBTimeSeries(
                 url="http://localhost:8086",
                 token="my-token",

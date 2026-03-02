@@ -6,11 +6,9 @@ how well the flow rate adhered to the target throughout the brewing process.
 """
 
 import math
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-
-from log import logger
 
 
 @dataclass

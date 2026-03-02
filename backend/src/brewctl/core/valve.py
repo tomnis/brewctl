@@ -29,7 +29,7 @@ class AbstractValve(ABC):
         """Get current absolute position (0-199 for one full rotation)."""
         pass
 
-from log import logger
+from backend.src.brewctl.core.log import logger
 
 class MockValve(AbstractValve):
     """A mock implementation of the Valve class for testing purposes."""
