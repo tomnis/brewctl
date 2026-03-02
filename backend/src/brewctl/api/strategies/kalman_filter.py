@@ -1,6 +1,4 @@
-import logging
-
-logger = logging.getLogger(__name__)
+from brewctl.core.log import logger
 
 
 class KalmanFilter:
@@ -36,24 +34,19 @@ class KalmanFilter:
         """
         if measurement is None:
             return self.x
-        
+
         if not self.is_initialized:
             # First measurement - just use it as our initial estimate
             self.x = measurement
             self.p = self.r
             self.is_initialized = True
             return self.x
-        
+
         # Prediction step: predict current state and error
         # Since we're using a random walk model, x_pred = x_prev
         x_pred: float = self.x
-        logger.info(f"p: {self.p}")
-        logger.info(f"q: {self.q}")
-
         p_pred = float(self.p) + float(self.q)
 
-        logger.info(f"p_pred: {p_pred}")
-        logger.info(f"r: {self.r}")
         # Update step: incorporate the measurement
         # Kalman gain
         k = p_pred / (float(p_pred) + float(self.r))

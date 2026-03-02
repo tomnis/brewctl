@@ -1,6 +1,6 @@
 import os
 
-from log import logger
+from .log import logger
 
 # TODO not sure why these are logger.infoed twice by fastapi cli
 BREWCTL_IS_PROD = os.environ.get('BREWCTL_IS_PROD', "false") == "true"

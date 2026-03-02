@@ -74,14 +74,14 @@ def client(mock_scale, mock_valve, mock_time_series):
             yield test_client
 
     # Reset global state after each test
-    import brewctl.server as server_module
+    import brewctl.api.server as server_module
     server_module.cur_brew = None
 
 
 @pytest.fixture(autouse=True)
 def reset_globals():
     """Reset global state before each test."""
-    import brewctl.server as server_module
+    import brewctl.api.server as server_module
     server_module.cur_brew = None
     yield
     # Cleanup after test

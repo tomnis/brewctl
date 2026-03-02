@@ -12,7 +12,7 @@ from pydantic import ValidationError
 # Add src to path so we can import api
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewctl.model import (
+from brewctl.core.model import (
     BrewState,
     BrewStrategyType,
     ValveCommand,

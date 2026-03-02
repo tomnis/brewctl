@@ -1,11 +1,11 @@
 # Strategies package
-from brewctl.strategies.DefaultBrewStrategy import DefaultBrewStrategy
-from brewctl.strategies.PIDBrewStrategy import PIDBrewStrategy
-from brewctl.strategies.MPCBrewStrategy import MPCBrewStrategy
-from brewctl.strategies.KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
-from brewctl.strategies.SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
-from brewctl.strategies.AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
-from brewctl.strategies.kalman_filter import KalmanFilter
+from .DefaultBrewStrategy import DefaultBrewStrategy
+from .PIDBrewStrategy import PIDBrewStrategy
+from .MPCBrewStrategy import MPCBrewStrategy
+from .KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
+from .SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
+from .AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
+from .kalman_filter import KalmanFilter
 
 __all__ = [
     "DefaultBrewStrategy",

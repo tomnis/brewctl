@@ -8,18 +8,20 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewctl.brew_strategy import (
+from brewctl.api.strategies.DefaultBrewStrategy import (
     create_brew_strategy,
     BREW_STRATEGY_REGISTRY,
+    AbstractBrewStrategy,
+)
+from brewctl.api.strategies import (
     DefaultBrewStrategy,
     PIDBrewStrategy,
     MPCBrewStrategy,
     AdaptiveGainSchedulingBrewStrategy,
     KalmanPIDBrewStrategy,
     SmithPredictorAdvancedBrewStrategy,
-    AbstractBrewStrategy,
 )
-from brewctl.model import BrewStrategyType
+from brewctl.core.model import BrewStrategyType
 
 
 BASE_PARAMS = {

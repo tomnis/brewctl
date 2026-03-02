@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Type, Tuple, Optional
 
-from config import *
-from model import *
-from brewctl.log import logger
+from brewctl.core.config import *
+from brewctl.core.model import *
+from brewctl.core.log import logger
 
 
 # Strategy Registry

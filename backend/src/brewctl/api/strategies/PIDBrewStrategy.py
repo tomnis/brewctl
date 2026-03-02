@@ -1,9 +1,9 @@
 from typing import Dict, Any, Tuple, Optional
 
-from config import *
-from model import ValveCommand, BrewStrategyType
-from brewctl.log import logger
-from brewctl.strategies.DefaultBrewStrategy import (
+from brewctl.core.config import *
+from brewctl.core.model import ValveCommand, BrewStrategyType
+from brewctl.core.log import logger
+from .DefaultBrewStrategy import (
     AbstractBrewStrategy,
     register_strategy,
     _extract_float,

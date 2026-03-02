@@ -11,8 +11,8 @@ import pytest
 # Add src to path so we can import api
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewctl.brew_strategy import DefaultBrewStrategy, AbstractBrewStrategy
-from brewctl.model import StartBrewRequest, ValveCommand
+from brewctl.api.brew_strategy import DefaultBrewStrategy, AbstractBrewStrategy
+from brewctl.core.model import StartBrewRequest, ValveCommand
 
 
 class TestDefaultBrewStrategy:

@@ -11,7 +11,7 @@ import pytest
 # Add src to path so we can import api
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewctl.valve import AbstractValve, MockValve
+from brewctl.core.valve import AbstractValve, MockValve
 
 
 class TestMockValve:

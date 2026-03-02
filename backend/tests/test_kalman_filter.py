@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from brewctl.brew_strategy import KalmanFilter
+from brewctl.api.strategies.kalman_filter import KalmanFilter
 
 
 class TestKalmanFilter:

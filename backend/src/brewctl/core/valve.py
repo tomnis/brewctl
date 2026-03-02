@@ -3,7 +3,11 @@ from abc import ABC, abstractmethod
 # Steps per full revolution
 STEPS_PER_REVOLUTION = 200
 
+from backend.src.brewctl.core.log import logger
+
+
 class AbstractValve(ABC):
+    """Abstract base class for valve implementations."""
 
     @abstractmethod
     def release(self):
@@ -23,13 +27,12 @@ class AbstractValve(ABC):
     @abstractmethod
     def return_to_start(self):
         """Return the valve to the starting position."""
+        pass
 
     @abstractmethod
     def get_position(self) -> int:
         """Get current absolute position (0-199 for one full rotation)."""
         pass
-
-from backend.src.brewctl.core.log import logger
 
 class MockValve(AbstractValve):
     """A mock implementation of the Valve class for testing purposes."""

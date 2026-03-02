@@ -3,7 +3,7 @@ Tests for brew quality scoring module.
 """
 import pytest
 from datetime import datetime, timedelta
-from brewctl.brew_quality import (
+from brewctl.api.brew_quality import (
     calculate_flow_rate_errors,
     calculate_flow_rate_stability,
     calculate_completeness,
