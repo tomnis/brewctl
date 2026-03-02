@@ -30,6 +30,7 @@ COPY backend/src/ ./src/
 # copy built frontend assets
 COPY --from=node-build /app/frontend/dist/ ./build/
 EXPOSE 8000
-CMD ["fastapi", "dev",  "src/brewserver/server.py", "--host", "0.0.0.0"]
+ENV PYTHONPATH=/app/src
+CMD ["fastapi", "dev",  "src/brewctl/api/server.py", "--host", "0.0.0.0"]
 # TODO use uvicorn?
-# CMD ["uvicorn", "brewserver.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# CMD ["uvicorn", "brewctl.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

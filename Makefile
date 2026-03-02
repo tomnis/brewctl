@@ -18,7 +18,7 @@ test: testBackend testFrontend
 #    cp -r frontend/dist/* backend/src/build/
 #    cd backend
 #    source bin/activate && pip install -r requirements/base.txt && pip install -r requirements/pi.txt
-#    fastapi dev brewserver/server.py --host 0.0.0.0
+#    fastapi dev src/brewctl/api/server.py --host 0.0.0.0
 
 
 

@@ -2,7 +2,7 @@ import random
 import threading
 from abc import ABC, abstractmethod
 
-from backend.src.brewctl.core.log import logger
+from brewctl.core.log import logger
 
 
 class AbstractScale(ABC):

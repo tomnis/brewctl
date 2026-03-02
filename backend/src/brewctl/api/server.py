@@ -7,7 +7,7 @@ import traceback
 from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
-from backend.src.brewctl.core.log import logger
+from brewctl.core.log import logger
 from fastapi import FastAPI, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -26,10 +26,9 @@ from pydantic import field_validator
 from typing import Annotated
 
 # from config import *
-from backend.src.brewctl.core.scale import AbstractScale
-from brew_strategy import create_brew_strategy
-from backend.src.brewctl.core.model import *
-from backend.src.brewctl.core.model import (
+from brewctl.core.scale import AbstractScale
+from brewctl.api.brew_strategy import create_brew_strategy
+from brewctl.core.model import (
     Brew,
     BrewState,
     StartBrewResponse,
@@ -38,10 +37,10 @@ from backend.src.brewctl.core.model import (
     HealthStatus,
     HealthResponse,
 )
-from backend.src.brewctl.core.valve import AbstractValve
-from time_series import AbstractTimeSeries
-from time_series import InfluxDBTimeSeries
-from brew_quality import compute_quality_score, get_score_grade
+from brewctl.core.valve import AbstractValve
+from brewctl.api.time_series import AbstractTimeSeries
+from brewctl.api.time_series import InfluxDBTimeSeries
+from brewctl.api.brew_quality import compute_quality_score, get_score_grade
 from datetime import datetime, timezone
 
 
@@ -51,11 +50,11 @@ cur_brew: Brew | None = None
 def create_scale() -> AbstractScale:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production [ac lunar] scale...")
-        from backend.src.brewctl.api.pi import LunarScale
+        from brewctl.api.pi import LunarScale
         s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
     else:
         logger.info("Initializing mock scale...")
-        from backend.src.brewctl.core.scale import MockScale
+        from brewctl.core.scale import MockScale
         s: AbstractScale = MockScale()
     return s
 
@@ -63,11 +62,11 @@ def create_scale() -> AbstractScale:
 def create_valve() -> AbstractValve:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production valve...")
-        from backend.src.brewctl.api.pi import MotorKitValve
+        from brewctl.api.pi import MotorKitValve
         v: AbstractValve = MotorKitValve()
     else:
         logger.info("Initializing mock valve...")
-        from backend.src.brewctl.core.valve import MockValve
+        from brewctl.core.valve import MockValve
         v: AbstractValve = MockValve()
     return v
 
@@ -482,9 +481,9 @@ async def brew_status():
         current_flow_rate = time_series.calculate_flow_rate_from_derivatives(readings) if readings else None
         current_weight = scale.get_weight()
         if current_weight is None:
-            res = {"status": "scale not connected", "brew_state": cur_brew.status.value}
+            res = {"status": "scale not connected", "brew_state": cur_brew.status.value, "brew_id": cur_brew.id}
         elif current_flow_rate is None:
-            res = {"status": "insufficient data for flow rate", "brew_state": cur_brew.status.value}
+            res = {"status": "insufficient data for flow rate", "brew_state": cur_brew.status.value, "brew_id": cur_brew.id}
         else:
             # target_weight includes vessel_weight, so calculate remaining coffee weight
             vessel_weight = cur_brew.vessel_weight

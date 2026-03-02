@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 # Steps per full revolution
 STEPS_PER_REVOLUTION = 200
 
-from backend.src.brewctl.core.log import logger
+from brewctl.core.log import logger
 
 
 class AbstractValve(ABC):

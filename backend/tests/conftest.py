@@ -56,18 +56,18 @@ def mock_time_series():
 def client(mock_scale, mock_valve, mock_time_series):
     """
     Create a TestClient with mocked dependencies.
-    This patches the module-level variables in api.server.
+    This patches the module-level variables in brewctl.api.server.
     """
     # Patch the module-level objects before importing app
-    with patch("api.server.create_scale", return_value=mock_scale), \
-         patch("api.server.create_valve", return_value=mock_valve), \
-         patch("api.server.create_time_series", return_value=mock_time_series), \
-         patch("api.server.scale", mock_scale), \
-         patch("api.server.valve", mock_valve), \
-         patch("api.server.time_series", mock_time_series):
+    with patch("brewctl.api.server.create_scale", return_value=mock_scale), \
+         patch("brewctl.api.server.create_valve", return_value=mock_valve), \
+         patch("brewctl.api.server.create_time_series", return_value=mock_time_series), \
+         patch("brewctl.api.server.scale", mock_scale), \
+         patch("brewctl.api.server.valve", mock_valve), \
+         patch("brewctl.api.server.time_series", mock_time_series):
 
         # Import app after patching
-        from brewctl.server import app
+        from brewctl.api.server import app
 
         # Create client and yield
         with TestClient(app) as test_client:
