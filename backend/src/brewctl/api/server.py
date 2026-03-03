@@ -4,7 +4,6 @@ import time
 import os
 import json
 import traceback
-import httpx
 from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
@@ -39,147 +38,7 @@ from brewctl.core.model import (
     HealthResponse,
 )
 
-
-def valve_step_forward():
-    """Proxy valve step forward to hardware server."""
-    with httpx.Client() as client:
-        response = client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/open")
-        response.raise_for_status()
-        return response.json()
-
-
-def valve_step_backward():
-    """Proxy valve step backward to hardware server."""
-    with httpx.Client() as client:
-        response = client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/close")
-        response.raise_for_status()
-        return response.json()
-
-
-def valve_return_to_start():
-    """Proxy valve return to start to hardware server."""
-    with httpx.Client() as client:
-        response = client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/return_to_start")
-        response.raise_for_status()
-        return response.json()
-
-
-def valve_release():
-    """Proxy valve release to hardware server."""
-    with httpx.Client() as client:
-        response = client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/release")
-        response.raise_for_status()
-        return response.json()
-
-
-def valve_get_position() -> int:
-    """Proxy valve get position to hardware server."""
-    with httpx.Client() as client:
-        response = client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/position")
-        response.raise_for_status()
-        return response.json()["position"]
-
-
-def valve_get_status() -> dict:
-    """Proxy valve get status to hardware server."""
-    with httpx.Client() as client:
-        response = client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/status")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_step_forward_async():
-    """Async proxy valve step forward to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/open")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_step_backward_async():
-    """Async proxy valve step backward to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/close")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_return_to_start_async():
-    """Async proxy valve return to start to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{BREWCTL_HARDWARE_URL}/api/valve/return_to_start"
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_release_async():
-    """Async proxy valve release to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/release")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_get_position_async() -> int:
-    """Async proxy valve get position to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/position")
-        response.raise_for_status()
-        return response.json()["position"]
-
-
-async def valve_get_status_async() -> dict:
-    """Async proxy valve get status to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/status")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_step_backward():
-    """Proxy valve step backward to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/close")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_return_to_start():
-    """Proxy valve return to start to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{BREWCTL_HARDWARE_URL}/api/valve/return_to_start"
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_release():
-    """Proxy valve release to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/release")
-        response.raise_for_status()
-        return response.json()
-
-
-async def valve_get_position() -> int:
-    """Proxy valve get position to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/position")
-        response.raise_for_status()
-        return response.json()["position"]
-
-
-async def valve_get_status() -> dict:
-    """Proxy valve get status to hardware server."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BREWCTL_HARDWARE_URL}/api/valve/status")
-        response.raise_for_status()
-        return response.json()
-
-
+from brewctl.core.valve import create_http_valve
 from brewctl.api.time_series import AbstractTimeSeries
 from brewctl.api.time_series import InfluxDBTimeSeries
 from brewctl.api.brew_quality import compute_quality_score, get_score_grade
@@ -207,6 +66,9 @@ time_series: AbstractTimeSeries = create_time_series()
 
 # Hardware server URL for proxying valve calls
 BREWCTL_HARDWARE_URL = f"http://{BREWCTL_HARDWARE_HOST}:{BREWCTL_HARDWARE_PORT}"
+
+# Valve instance - HttpValve proxies to hardware server
+valve = create_http_valve(BREWCTL_HARDWARE_URL)
 
 
 @asynccontextmanager
@@ -297,7 +159,7 @@ def get_component_health() -> dict:
     # Check valve availability
     valve_health = {"available": False, "position": None}
     try:
-        position = valve_get_position()
+        position = valve.get_position()
         valve_health = {"available": True, "position": position}
     except Exception as e:
         logger.error(f"Error checking valve health: {e}")
@@ -346,7 +208,7 @@ def health_check():
     try:
         # The valve is available if it's not currently in use by another brew
         # We'll consider it available if we can access it without error
-        position = valve_get_position()
+        position = valve.get_position()
         valve_health = {"available": True, "position": position}
     except Exception as e:
         logger.error(f"Error checking valve health: {e}")
@@ -475,13 +337,14 @@ async def brew_step_task(brew_id, strategy):
                     cur_brew.status = BrewState.COMPLETED
                     cur_brew.time_completed = datetime.now(timezone.utc)
                     scale.disconnect()
-                    await valve_return_to_start_async()
-                    await valve_release_async()
+                    # TODO should just be plain sync i think?
+                    await asyncio.to_thread(valve.return_to_start)
+                    await asyncio.to_thread(valve.release)
                     return
                 elif valve_command == ValveCommand.FORWARD:
-                    await valve_step_forward_async()
+                    await asyncio.to_thread(valve.step_forward)
                 elif valve_command == ValveCommand.BACKWARD:
-                    await valve_step_backward_async()
+                    await asyncio.to_thread(valve.step_backward)
                 # Reset state to brewing on successful valve operation
                 cur_brew.status = BrewState.BREWING
                 await asyncio.sleep(interval)
@@ -601,7 +464,7 @@ async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
     # edge case with teardown before anything has happened
     # valve.return_to_start()
     time.sleep(1)
-    valve_release()
+    await asyncio.to_thread(valve.release)
 
     scale.disconnect()
     scale = None
@@ -633,7 +496,7 @@ async def brew_status():
             current_flow_rate=None,
             current_weight=None,
             estimated_time_remaining=None,
-            valve_position=await valve_get_position_async(),
+            valve_position=await asyncio.to_thread(valve.get_position),
         )
         return brew_status.model_dump()
     else:
@@ -679,7 +542,7 @@ async def brew_status():
                 current_flow_rate=current_flow_rate,
                 current_weight=current_weight,
                 estimated_time_remaining=estimated_time_remaining,
-                valve_position=await valve_get_position_async(),
+                valve_position=await asyncio.to_thread(valve.get_position),
             )
             return brew_status.model_dump()
         return res
@@ -948,8 +811,8 @@ async def kill_brew():
     if cur_brew is not None:
         old_id = cur_brew.id
         cur_brew = None
-        await valve_return_to_start_async()
-        await valve_release_async()
+        await asyncio.to_thread(valve.return_to_start)
+        await asyncio.to_thread(valve.release)
         scale.disconnect()
         return BrewCommandResponse(
             status="killed", brew_id=old_id, brew_state=BrewState.IDLE
@@ -1011,9 +874,7 @@ async def nudge_open():
         _nudge_last_call_time = current_time
 
     logger.info(f"Nudge open for brew {cur_brew.id}")
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/open")
-        response.raise_for_status()
+    await asyncio.to_thread(valve.step_forward)
     return BrewCommandResponse(
         status="nudged_open", brew_id=cur_brew.id, brew_state=cur_brew.status
     )
@@ -1037,9 +898,7 @@ async def nudge_close():
         _nudge_last_call_time = current_time
 
     logger.info(f"Nudge close for brew {cur_brew.id}")
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{BREWCTL_HARDWARE_URL}/api/valve/nudge/close")
-        response.raise_for_status()
+    await asyncio.to_thread(valve.step_backward)
     return BrewCommandResponse(
         status="nudged_closed", brew_id=cur_brew.id, brew_state=cur_brew.status
     )

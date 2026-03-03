@@ -62,6 +62,7 @@ class MockValve(AbstractValve):
         return self.position % STEPS_PER_REVOLUTION
 
 
+# TODO probably need to move this to hardware
 def create_valve() -> AbstractValve:
     """Create a valve instance based on environment configuration."""
     from brewctl.hardware.MotorKitValve import MotorKitValve
@@ -72,3 +73,10 @@ def create_valve() -> AbstractValve:
         return MotorKitValve(motor_number=BREWCTL_VALVE_MOTOR_NUMBER)
     else:
         return MockValve()
+
+
+def create_http_valve(base_url: str) -> AbstractValve:
+    """Create an HTTP valve that proxies operations to a hardware server."""
+    from brewctl.api.http_valve import HttpValve
+
+    return HttpValve(base_url)
