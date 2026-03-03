@@ -26,7 +26,7 @@ from typing import Annotated
 from brewctl.core.config import *
 from brewctl.api.config import *
 from brewctl.core.model import *
-from brewctl.core.scale import AbstractScale
+from brewctl.api.http_scale import HttpScale
 from brewctl.api.brew_strategy import create_brew_strategy
 from brewctl.core.model import (
     Brew,
@@ -38,12 +38,13 @@ from brewctl.core.model import (
     HealthResponse,
 )
 
-from brewctl.core.valve import create_http_valve
+from brewctl.api.http_valve import HttpValve
 from brewctl.api.time_series import AbstractTimeSeries
 from brewctl.api.time_series import InfluxDBTimeSeries
 from brewctl.api.brew_quality import compute_quality_score, get_score_grade
 from datetime import datetime, timezone
 
+from brewctl.api.config import BREWCTL_HARDWARE_URL
 
 # Single instance of current brew instead of separate id and state
 cur_brew: Brew | None = None
@@ -61,14 +62,13 @@ def create_time_series() -> InfluxDBTimeSeries:
     return ts
 
 
-scale: AbstractScale = None  # create_scale()
+# TODO we dont need this global anymore
+scale = HttpScale(BREWCTL_HARDWARE_URL)
 time_series: AbstractTimeSeries = create_time_series()
 
-# Hardware server URL for proxying valve calls
-BREWCTL_HARDWARE_URL = f"http://{BREWCTL_HARDWARE_HOST}:{BREWCTL_HARDWARE_PORT}"
-
 # Valve instance - HttpValve proxies to hardware server
-valve = create_http_valve(BREWCTL_HARDWARE_URL)
+# TODO we dont need this global anymore
+valve = HttpValve(BREWCTL_HARDWARE_URL)
 
 
 @asynccontextmanager
@@ -118,7 +118,7 @@ def get_scale_status() -> ScaleStatus:
     # Use exponential backoff reconnection for improved reliability
     global scale
     if scale is None or not scale.connected:
-        scale = create_scale()
+        scale = HttpScale(BREWCTL_HARDWARE_URL)
         scale.reconnect_with_backoff()
 
     if scale is not None and scale.connected:
@@ -154,6 +154,7 @@ def get_component_health() -> dict:
         }
     except Exception as e:
         traceback.print_exc()
+        logger.error(BREWCTL_HARDWARE_URL)
         logger.error(f"Error checking scale health: {e}")
 
     # Check valve availability
@@ -162,6 +163,7 @@ def get_component_health() -> dict:
         position = valve.get_position()
         valve_health = {"available": True, "position": position}
     except Exception as e:
+        logger.error(BREWCTL_HARDWARE_URL)
         logger.error(f"Error checking valve health: {e}")
 
     # Check InfluxDB connectivity
@@ -182,6 +184,21 @@ def get_component_health() -> dict:
 @app.get("/api/scale")
 def read_scale():
     return get_scale_status()
+
+
+@app.get("/api/scale/status")
+def get_scale_status_endpoint():
+    return {
+        "connected": scale.connected,
+        "weight": scale.get_weight() if scale.connected else None,
+        "units": scale.get_units() if scale.connected else None,
+        "battery_pct": scale.get_battery_percentage() if scale.connected else None,
+    }
+
+
+@app.get("/api/valve/position")
+def get_valve_position():
+    return {"position": valve.get_position()}
 
 
 @app.get("/api/health")
@@ -402,7 +419,7 @@ async def start_brew(req: StartBrewRequest | None = None):
 
     # Try to connect to scale with exponential backoff
     if scale is None or not scale.connected:
-        scale = create_scale()
+        scale = HttpScale(BREWCTL_HARDWARE_URL)
         if not scale.reconnect_with_backoff():
             raise HTTPException(
                 status_code=503,

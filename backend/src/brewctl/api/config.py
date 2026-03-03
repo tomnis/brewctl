@@ -63,8 +63,6 @@ BREWCTL_QUALITY_SCORING_WINDOW = int(
     os.environ.get("BREWCTL_QUALITY_SCORING_WINDOW", "60")
 )  # seconds
 
-# Hardware server connection (for proxying valve calls)
-BREWCTL_HARDWARE_HOST = os.environ.get("BREWCTL_HARDWARE_HOST", "localhost")
-BREWCTL_HARDWARE_PORT = int(os.environ.get("BREWCTL_HARDWARE_PORT", "8000"))
-logger.info(f"BREWCTL_HARDWARE_HOST = {BREWCTL_HARDWARE_HOST}")
-logger.info(f"BREWCTL_HARDWARE_PORT = {BREWCTL_HARDWARE_PORT}")
+# Hardware server URL (constructed from host and port)
+BREWCTL_HARDWARE_URL = os.environ.get("BREWCTL_HARDWARE_URL")
+logger.info(f"BREWCTL_HARDWARE_URL = {BREWCTL_HARDWARE_URL}")

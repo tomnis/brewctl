@@ -60,23 +60,3 @@ class MockValve(AbstractValve):
     def get_position(self) -> int:
         """Get current absolute position (0-199 for one full rotation)."""
         return self.position % STEPS_PER_REVOLUTION
-
-
-# TODO probably need to move this to hardware
-def create_valve() -> AbstractValve:
-    """Create a valve instance based on environment configuration."""
-    from brewctl.hardware.MotorKitValve import MotorKitValve
-    from brewctl.hardware.config import BREWCTL_VALVE_MOTOR_NUMBER
-    from brewctl.core.config import BREWCTL_IS_PROD
-
-    if BREWCTL_IS_PROD:
-        return MotorKitValve(motor_number=BREWCTL_VALVE_MOTOR_NUMBER)
-    else:
-        return MockValve()
-
-
-def create_http_valve(base_url: str) -> AbstractValve:
-    """Create an HTTP valve that proxies operations to a hardware server."""
-    from brewctl.api.http_valve import HttpValve
-
-    return HttpValve(base_url)

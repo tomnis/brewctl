@@ -3,7 +3,7 @@ services:
     build: ./backend
     environment:
       - BREWCTL_IS_PROD=false
-      - BREW_CTL_MODE=hardware
+      - BREWCTL_MODE=hardware
       - BREWCTL_SCALE_MAC_ADDRESS=${BREWCTL_SCALE_MAC_ADDRESS}
     ports:
       - "8001:8000"
@@ -14,7 +14,8 @@ services:
     build: ./backend
     environment:
       - BREWCTL_IS_PROD=false
-      - BREW_CTL_MODE=api
+      - BREWCTL_MODE=api
+      - BREWCTL_HARDWARE_URL=http://hardware:8000
       - BREWCTL_INFLUXDB_TOKEN=${BREWCTL_INFLUXDB_TOKEN}
       - BREWCTL_INFLUXDB_URL=${BREWCTL_INFLUXDB_URL}
       - BREWCTL_INFLUXDB_ORG=${BREWCTL_INFLUXDB_ORG}

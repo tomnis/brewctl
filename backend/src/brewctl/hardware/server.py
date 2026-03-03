@@ -6,27 +6,66 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from brewctl.core.log import logger
-from brewctl.core.valve import create_valve, AbstractValve
-from brewctl.hardware.config import BREWCTL_VALVE_MOTOR_NUMBER
+from brewctl.core.valve import AbstractValve
+from brewctl.core.scale import AbstractScale
+from brewctl.core.config import *
+from brewctl.hardware.config import *
+from brewctl.core.scale import MockScale
 
 
-valve: AbstractValve = None
+
+
+
+def create_scale() -> AbstractScale:
+    if BREWCTL_IS_PROD:
+        logger.info("Initializing production [ac lunar] scale...")
+        from brewctl.hardware.LunarScale import LunarScale
+        s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
+    else:
+        logger.info("Initializing mock scale...")
+        from brewctl.core.scale import MockScale
+        s: AbstractScale = MockScale()
+    return s
+
+
+def create_valve() -> AbstractValve:
+    if BREWCTL_IS_PROD:
+        logger.info("Initializing production valve...")
+        from brewctl.hardware.MotorKitValve import MotorKitValve
+        v: AbstractValve = MotorKitValve()
+    else:
+        logger.info("Initializing mock valve...")
+        from brewctl.core.valve import MockValve
+        v: AbstractValve = MockValve()
+    return v
+
+scale: AbstractScale = None #create_scale()
+valve: AbstractValve = create_valve()
 
 NUDGE_MIN_INTERVAL_SECONDS = 2.0
 _nudge_last_call_time = 0.0
 _nudge_lock = threading.Lock()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global valve
+    global valve, scale
     logger.info("Initializing valve...")
     valve = create_valve()
     logger.info("Valve initialized")
+
+    logger.info("Initializing scale...")
+    scale = create_scale()
+    logger.info("Scale initialized")
+
     yield
+
     if valve:
         valve.release()
         logger.info("Shutting down, released valve")
+
+    if scale:
+        scale.disconnect()
+        logger.info("Shutting down, disconnected scale")
 
 
 app = FastAPI(title="BrewCTL Hardware API", lifespan=lifespan)
@@ -54,7 +93,33 @@ async def health():
             valve_health = {"available": True, "position": position}
     except Exception as e:
         logger.error(f"Error checking valve health: {e}")
-    return {"status": "healthy", "mode": "hardware", "valve": valve_health}
+
+    scale_health = {
+        "connected": False,
+        "weight": None,
+        "units": None,
+        "battery_pct": None,
+    }
+    try:
+        if scale and scale.connected:
+            scale_health = {
+                "connected": scale.connected,
+                "weight": scale.get_weight(),
+                "units": scale.get_units(),
+                "battery_pct": scale.get_battery_percentage(),
+            }
+    except Exception as e:
+        logger.error(f"Error checking scale health: {e}")
+
+    return {
+        "status": "healthy",
+        "mode": "hardware",
+        "valve": valve_health,
+        "scale": scale_health,
+    }
+
+
+# === Valve Endpoints ===
 
 
 @app.post("/api/valve/nudge/open")
@@ -145,3 +210,37 @@ async def get_status():
             "status": "error",
             "error": str(e),
         }
+
+
+# === Scale Endpoints ===
+
+
+@app.get("/api/scale/status")
+async def get_scale_status():
+    if scale is None:
+        raise HTTPException(status_code=503, detail="scale not available")
+
+    return {
+        "connected": scale.connected,
+        "weight": scale.get_weight() if scale.connected else None,
+        "units": scale.get_units() if scale.connected else None,
+        "battery_pct": scale.get_battery_percentage() if scale.connected else None,
+    }
+
+
+@app.post("/api/scale/connect")
+async def connect_scale():
+    if scale is None:
+        raise HTTPException(status_code=503, detail="scale not available")
+
+    scale.connect()
+    return {"status": "connected" if scale.connected else "failed"}
+
+
+@app.post("/api/scale/disconnect")
+async def disconnect_scale():
+    if scale is None:
+        raise HTTPException(status_code=503, detail="scale not available")
+
+    scale.disconnect()
+    return {"status": "disconnected"}
