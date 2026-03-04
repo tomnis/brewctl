@@ -106,14 +106,20 @@ export default function StartBrew() {
     };
 
     try {
-      await fetch(`${apiUrl}/brew/start`, {
+      const response = await fetch(`${apiUrl}/brew/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newBrewRequest),
       });
-      
-        // Wait for backend to persist state, then fetch
-        // Background polling is already running and will pick up the new state
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("start failed:", response.status, errorText);
+        return;
+      }
+
+      // Wait for backend to persist state, then fetch
+      // Background polling is already running and will pick up the new state
       await new Promise(resolve => setTimeout(resolve, 1500));
       await fetchBrewInProgress();
     } catch (e) {
