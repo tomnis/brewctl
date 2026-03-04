@@ -117,11 +117,12 @@ def get_scale_status() -> ScaleStatus:
     """
     Reads status from the scale. Used for both a specific endpoint, and polling+writing scale data as part of the event loop.
     """
-    # Use exponential backoff reconnection for improved reliability
+    # Reuse existing scale instance - SSE listener handles reconnection automatically
     global scale
-    if scale is None or not scale.connected:
+    if scale is None:
         scale = HttpScale(BREWCTL_HARDWARE_URL)
-        scale.reconnect_with_backoff()
+    if not scale.connected:
+        scale.connect()  # Uses existing instance's SSE listener
 
     if scale is not None and scale.connected:
         weight = scale.get_weight()

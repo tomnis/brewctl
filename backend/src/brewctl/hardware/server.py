@@ -15,6 +15,11 @@ from brewctl.core.scale import AbstractScale
 from brewctl.core.config import *
 from brewctl.hardware.config import *
 
+SCALE_SSE_INTERVAL = 2.0
+
+
+
+
 
 def create_scale() -> AbstractScale:
     if BREWCTL_IS_PROD:
@@ -219,6 +224,43 @@ async def get_status():
 
 
 # === Scale Endpoints ===
+
+async def sse_scale_status_generator() -> AsyncGenerator[str, None]:
+    """SSE generator for real-time scale status updates."""
+    try:
+        while True:
+            if scale is None:
+                yield f"data: {json.dumps({'error': 'scale not available'})}\n\n"
+                await asyncio.sleep(SCALE_SSE_INTERVAL)
+                continue
+
+            status = {
+                "connected": scale.connected,
+                "weight": scale.get_weight() if scale.connected else None,
+                "units": scale.get_units() if scale.connected else None,
+                "battery_pct": scale.get_battery_percentage()
+                if scale.connected
+                else None,
+            }
+            yield f"data: {json.dumps(status)}\n\n"
+            await asyncio.sleep(SCALE_SSE_INTERVAL)
+    except asyncio.CancelledError:
+        logger.info("SSE scale status connection closed by client")
+        raise
+
+
+@app.get("/sse/scale/status")
+async def sse_scale_status():
+    """SSE endpoint for real-time scale status updates."""
+    return StreamingResponse(
+        sse_scale_status_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/scale/status")
