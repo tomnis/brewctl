@@ -2,7 +2,7 @@ FROM node:25.3.0-alpine AS node-build
 WORKDIR /app/frontend
 # install npm deps
 COPY frontend/package*.json ./
-RUN npm i  --no-audit
+RUN npm i --no-audit
 
 ARG COLDBREW_FRONTEND_API_URL
 ENV COLDBREW_FRONTEND_API_URL=$COLDBREW_FRONTEND_API_URL
@@ -19,11 +19,11 @@ FROM python:3.13 AS runtime
 
 WORKDIR /app
 # install pip deps
-RUN apt-get update && apt-get upgrade -y && apt-get install -y gcc bluez
+RUN apt-get update && apt-get upgrade -y && apt-get install -y gcc
 COPY backend/requirements/ ./requirements/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements/base.txt && \
-    pip install --no-cache-dir -r requirements/pi.txt
+    pip install --no-cache-dir -r requirements/backend.txt
 
 # copy backend code
 COPY backend/src/ ./src/

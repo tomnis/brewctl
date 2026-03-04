@@ -1,9 +1,13 @@
 import time
 import threading
+import json
+import asyncio
+from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from brewctl.core.log import logger
 from brewctl.core.valve import AbstractValve
@@ -12,17 +16,16 @@ from brewctl.core.config import *
 from brewctl.hardware.config import *
 
 
-
-
-
 def create_scale() -> AbstractScale:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production [ac lunar] scale...")
         from brewctl.hardware.LunarScale import LunarScale
+
         s: AbstractScale = LunarScale(BREWCTL_SCALE_MAC_ADDRESS)
     else:
         logger.info("Initializing mock scale...")
         from brewctl.core.scale import MockScale
+
         s: AbstractScale = MockScale()
     return s
 
@@ -31,19 +34,23 @@ def create_valve() -> AbstractValve:
     if BREWCTL_IS_PROD:
         logger.info("Initializing production valve...")
         from brewctl.hardware.MotorKitValve import MotorKitValve
+
         v: AbstractValve = MotorKitValve()
     else:
         logger.info("Initializing mock valve...")
         from brewctl.core.valve import MockValve
+
         v: AbstractValve = MockValve()
     return v
 
-scale: AbstractScale = None #create_scale()
+
+scale: AbstractScale = None  # create_scale()
 valve: AbstractValve = create_valve()
 
 NUDGE_MIN_INTERVAL_SECONDS = 2.0
 _nudge_last_call_time = 0.0
 _nudge_lock = threading.Lock()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
