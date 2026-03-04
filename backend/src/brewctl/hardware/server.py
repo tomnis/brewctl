@@ -317,6 +317,7 @@ async def get_scale_status():
 @app.post("/api/scale/connect")
 async def connect_scale():
     if scale is None:
+        logger.info("scale is none")
         raise HTTPException(status_code=503, detail="scale not available")
 
     scale.connect()

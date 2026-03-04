@@ -14,7 +14,9 @@ class HttpScale(AbstractScale):
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        self._http_url = f"{self.base_url}/api/scale"
         self._sse_url = f"{self.base_url}/sse/scale/status"
+        logger.info(self._sse_url)
 
         # Cached values from SSE stream
         self._connected: bool = False
@@ -61,6 +63,7 @@ class HttpScale(AbstractScale):
                                 break
 
                             data = self._parse_sse_line(line)
+                            # logger.info(f"scale data: {data}")
                             if data:
                                 with self._lock:
                                     # Update cached values
@@ -104,9 +107,19 @@ class HttpScale(AbstractScale):
             return self._connected
 
     def connect(self):
-        """Start the SSE listener thread."""
+        """Start the SSE listener thread and connect the hardware scale."""
+        # First, call the hardware server to connect the physical scale
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(f"{self._http_url}/connect")
+                response.raise_for_status()
+                logger.info("Hardware scale connected via server")
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to connect hardware scale: {e}")
+            # Continue anyway - the SSE listener will handle the error state
+
         if self._sse_task is not None and self._sse_task.is_alive():
-            logger.info("SSE listener already running")
+            # logger.info("SSE listener already running")
             return
 
         self._stop_event.clear()
@@ -115,12 +128,21 @@ class HttpScale(AbstractScale):
         logger.info("Started SSE listener for scale")
 
     def disconnect(self):
-        """Stop the SSE listener thread."""
+        """Stop the SSE listener thread and disconnect the hardware scale."""
         self._stop_event.set()
         if self._sse_task is not None:
             self._sse_task.join(timeout=5.0)
             self._sse_task = None
         logger.info("Stopped SSE listener for scale")
+
+        # Call the hardware server to disconnect the physical scale
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(f"{self._http_url}/disconnect")
+                response.raise_for_status()
+                logger.info("Hardware scale disconnected via server")
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to disconnect hardware scale: {e}")
 
         with self._lock:
             self._connected = False
