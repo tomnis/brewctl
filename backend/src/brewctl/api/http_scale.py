@@ -106,7 +106,7 @@ class HttpScale(AbstractScale):
     def connect(self):
         """Start the SSE listener thread."""
         if self._sse_task is not None and self._sse_task.is_alive():
-            # logger.info("SSE listener already running")
+            logger.info("SSE listener already running")
             return
 
         self._stop_event.clear()

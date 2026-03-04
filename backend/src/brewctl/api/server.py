@@ -80,11 +80,15 @@ async def lifespan(app: FastAPI):
     Try our best to manage the scale connection, but restart is finicky
     We don't need to eagerly connect to the scale here, just make sure we disconnect on shutdown
     """
+    logger.info("Starting SSE listeners...")
+    valve.connect()
     logger.info("lifespan: server startup complete, yielding control")
     yield
     if scale is not None:
         scale.disconnect()
-    logger.info("Shutting down, disconnected scale...")
+    if valve is not None:
+        valve.disconnect()
+    logger.info("Shutting down, disconnected scale and valve...")
 
 
 """
@@ -163,8 +167,8 @@ def get_component_health() -> dict:
     # Check valve availability
     valve_health = {"available": False, "position": None}
     try:
-        position = valve.get_position()
-        valve_health = {"available": True, "position": position}
+        # Use cached values from SSE listener (no HTTP call needed)
+        valve_health = {"available": valve.available, "position": valve.get_position()}
     except Exception as e:
         logger.error(BREWCTL_HARDWARE_URL)
         logger.error(f"Error checking valve health: {e}")
@@ -223,13 +227,11 @@ def health_check():
     except Exception as e:
         logger.error(f"Error checking scale health: {e}")
 
-    # Check valve availability (try to get position)
+    # Check valve availability (use cached SSE values)
     valve_health = {"available": False}
     try:
-        # The valve is available if it's not currently in use by another brew
-        # We'll consider it available if we can access it without error
-        position = valve.get_position()
-        valve_health = {"available": True, "position": position}
+        # Use cached values from SSE listener
+        valve_health = {"available": valve.available, "position": valve.get_position()}
     except Exception as e:
         logger.error(f"Error checking valve health: {e}")
 

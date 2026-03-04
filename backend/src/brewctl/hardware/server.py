@@ -16,6 +16,7 @@ from brewctl.core.config import *
 from brewctl.hardware.config import *
 
 SCALE_SSE_INTERVAL = 2.0
+VALVE_SSE_INTERVAL = 2.0
 
 
 
@@ -221,6 +222,43 @@ async def get_status():
             "status": "error",
             "error": str(e),
         }
+
+
+async def sse_valve_status_generator() -> AsyncGenerator[str, None]:
+    """SSE generator for real-time valve status updates."""
+    try:
+        while True:
+            if valve is None:
+                yield f"data: {json.dumps({'error': 'valve not available'})}\n\n"
+                await asyncio.sleep(VALVE_SSE_INTERVAL)
+                continue
+
+            try:
+                position = valve.get_position()
+                status = {"available": True, "position": position}
+            except Exception as e:
+                logger.error(f"Error getting valve position in SSE: {e}")
+                status = {"available": False, "position": None, "error": str(e)}
+
+            yield f"data: {json.dumps(status)}\n\n"
+            await asyncio.sleep(VALVE_SSE_INTERVAL)
+    except asyncio.CancelledError:
+        logger.info("SSE valve status connection closed by client")
+        raise
+
+
+@app.get("/sse/valve/status")
+async def sse_valve_status():
+    """SSE endpoint for real-time valve status updates."""
+    return StreamingResponse(
+        sse_valve_status_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # === Scale Endpoints ===
