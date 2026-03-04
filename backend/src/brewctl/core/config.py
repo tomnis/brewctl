@@ -37,6 +37,7 @@ logger.info(f"BREWCTL_WS_HEALTH_PUSH_INTERVAL = {BREWCTL_WS_HEALTH_PUSH_INTERVAL
 
 # ===== Scale Reconnection Configuration =====
 # Shared scale connection settings
+# TODO i dont think these 3 are needed
 BREWCTL_SCALE_RECONNECT_RETRIES = int(os.environ.get('BREWCTL_SCALE_RECONNECT_RETRIES', '5'))
 BREWCTL_SCALE_RECONNECT_BASE_DELAY = float(os.environ.get('BREWCTL_SCALE_RECONNECT_BASE_DELAY', '1.0'))
 BREWCTL_SCALE_RECONNECT_MAX_DELAY = float(os.environ.get('BREWCTL_SCALE_RECONNECT_MAX_DELAY', '30.0'))

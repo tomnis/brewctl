@@ -7,7 +7,6 @@ import traceback
 from typing import AsyncGenerator
 
 from contextlib import asynccontextmanager
-from brewctl.core.log import logger
 from fastapi import (
     FastAPI,
     Query,
@@ -23,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import field_validator
 from typing import Annotated
 
+from brewctl.core.log import logger
 from brewctl.core.config import *
 from brewctl.api.config import *
 from brewctl.core.model import *
@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
 
 
 """
-Main place for pi-side logic. Webserver handles incoming requests acting as a "proxy" of sorts for both the scale and valve.
+Main place for backend logic. Webserver handles incoming requests acting as a "proxy" of sorts for both the scale and valve (hardware).
 Prefer to use start/end endpoints as those are the simplest.
 Acquire/release endpoints can be used for clients to implement their own fine-grained brewing logic.
 

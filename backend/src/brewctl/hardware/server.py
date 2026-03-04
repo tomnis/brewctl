@@ -10,7 +10,6 @@ from brewctl.core.valve import AbstractValve
 from brewctl.core.scale import AbstractScale
 from brewctl.core.config import *
 from brewctl.hardware.config import *
-from brewctl.core.scale import MockScale
 
 
 
