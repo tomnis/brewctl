@@ -41,6 +41,7 @@ from brewctl.core.model import (
 from brewctl.api.http_valve import HttpValve
 from brewctl.api.time_series import AbstractTimeSeries
 from brewctl.api.time_series import InfluxDBTimeSeries
+from brewctl.api.weight_buffer import WeightBuffer
 from brewctl.api.brew_quality import compute_quality_score, get_score_grade
 from datetime import datetime, timezone
 
@@ -65,6 +66,7 @@ def create_time_series() -> InfluxDBTimeSeries:
 # TODO we dont need this global anymore
 scale = HttpScale(BREWCTL_HARDWARE_URL)
 time_series: AbstractTimeSeries = create_time_series()
+weight_buffer: WeightBuffer = WeightBuffer(BREWCTL_SCALE_BUFFER_SIZE)
 
 # Valve instance - HttpValve proxies to hardware server
 # TODO we dont need this global anymore
@@ -314,6 +316,7 @@ async def collect_scale_data_task(brew_id, s):
                 if weight is not None and battery_pct is not None:
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
                     time_series.write_scale_data(weight, battery_pct, brew_id)
+                    weight_buffer.add_reading(weight)
                     # Reset state to brewing on successful data collection
                     cur_brew.status = BrewState.BREWING
             await asyncio.sleep(s)
@@ -334,17 +337,21 @@ async def brew_step_task(brew_id, strategy):
             # Execute valve commands when actively brewing or in error state (to recover)
             if cur_brew.status in (BrewState.BREWING, BrewState.ERROR):
                 # get the current flow rate and weight
-                # Use time_started to filter out readings from previous brews
-                readings = time_series.get_recent_weight_readings(
-                    duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
-                    start_time_filter=cur_brew.time_started,
-                )
-                current_flow_rate = (
-                    time_series.calculate_flow_rate_from_derivatives(readings)
-                    if readings
-                    else None
-                )
-                current_weight = time_series.get_current_weight()
+                # Use local buffer first, fallback to InfluxDB during warm-up or if stale
+                if weight_buffer.is_ready() and not weight_buffer.is_stale():
+                    current_flow_rate = weight_buffer.get_flow_rate()
+                    current_weight = weight_buffer.get_current_weight()
+                else:
+                    readings = time_series.get_recent_weight_readings(
+                        duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
+                        start_time_filter=cur_brew.time_started,
+                    )
+                    current_flow_rate = (
+                        time_series.calculate_flow_rate_from_derivatives(readings)
+                        if readings
+                        else None
+                    )
+                    current_weight = time_series.get_current_weight()
                 (valve_command, interval) = strategy.step(
                     current_flow_rate, current_weight
                 )
@@ -458,6 +465,8 @@ async def start_brew(req: StartBrewRequest | None = None):
             vessel_weight=vessel_weight,
             strategy=strategy_type,
         )
+
+        weight_buffer.clear()
 
         # start scale read and brew tasks
         asyncio.create_task(
@@ -845,8 +854,9 @@ async def kill_brew():
 def read_flow_rate():
     """Read the current flow rate from the time series."""
     global cur_brew
-    # If there's an active brew, filter by time_started to avoid stale data from previous brews
-    if cur_brew is not None and cur_brew.time_started is not None:
+    if weight_buffer.is_ready() and not weight_buffer.is_stale():
+        flow_rate = weight_buffer.get_flow_rate()
+    elif cur_brew is not None and cur_brew.time_started is not None:
         readings = time_series.get_recent_weight_readings(
             duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
             start_time_filter=cur_brew.time_started,
