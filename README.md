@@ -1,6 +1,6 @@
 # Brewctl
 
-A precision cold brew coffee brewing system with real-time flow rate control, built on a Raspberry Pi with a React frontend.
+A precision cold brew coffee system with real-time flow rate control, built on a Raspberry Pi with a React frontend.
 
 ## Table of Contents
 
