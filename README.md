@@ -18,15 +18,19 @@ A precision cold brew coffee system with real-time flow rate control, built on a
 
 ## Architecture Overview
 
-The Brewctl system consists of three main components:
+The Brewctl system consists of three main components, split into a microservices architecture:
 
-### Backend (Python/FastAPI)
-The backend runs on a Raspberry Pi and provides:
+### Backend (Python/FastAPI) - API Service
+The API service runs on a Raspberry Pi (or development machine) and provides:
 - **REST API** - HTTP endpoints for brew control (start, stop, pause, resume, kill)
-- **Scale Integration** - Reads weight from Acaia Lunar scale via Bluetooth
-- **Valve Control** - Controls stepper motor valve via Adafruit MotorKit
 - **Time Series Storage** - Writes metrics to InfluxDB for flow rate calculation
 - **Brew Strategy Engine** - Pluggable strategies for controlling the brewing process
+- **Hardware Abstraction** - Uses HTTP clients to send commands to the Hardware service
+
+### Backend (Python/FastAPI) - Hardware Service
+The Hardware service runs directly on the device connected to the hardware:
+- **Scale Integration** - Reads weight from Acaia Lunar scale via Bluetooth
+- **Valve Control** - Controls stepper motor valve via Adafruit MotorKit
 
 ### Frontend (React/TypeScript)
 The web-based user interface provides:
@@ -101,77 +105,53 @@ The `DefaultBrewStrategy` adjusts the valve to maintain a target flow rate:
 
 ## Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              User Interface                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         React Frontend (Vite)                           ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ ││
-│  │  │   Header    │  │     Brew    │  │    Footer    │  │   Theme    │ ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  └─────────────┘ ││
-│  │                                                                          ││
-│  │  ┌────────────────────────────────────────────────────────────────────┐ ││
-│  │  │                    BrewContext (State Management)                  │ ││
-│  │  │  • useBrewPolling() - polls /api/brew/status every 2 seconds       │ ││
-│  │  │  • BrewProvider - manages brew state and actions                   │ ││
-│  │  └────────────────────────────────────────────────────────────────────┘ ││
-│  └───────────────────────────────┬─────────────────────────────────────────┘│
-└───────────────────────────────────┼──────────────────────────────────────────┘
-                                    │ HTTP JSON API
-                                    │ (CORS enabled)
-┌───────────────────────────────────┼──────────────────────────────────────────┐
-│                         Backend (FastAPI)                                    │
-│  ┌───────────────────────────────┴─────────────────────────────────────────┐│
-│  │                         BrewServer                                        ││
-│  │                                                                           ││
-│  │  ┌─────────────────────────────────────────────────────────────────────┐ ││
-│  │  │                     API Endpoints                                   │ ││
-│  │  │  POST /api/brew/start    - Start a new brew                        │ ││
-│  │  │  POST /api/brew/stop     - Stop (graceful)                         │ ││
-│  │  │  POST /api/brew/pause    - Pause brew                               │ ││
-│  │  │  POST /api/brew/resume   - Resume paused brew                       │ ││
-│  │  │  POST /api/brew/kill     - Force stop                               │ ││
-│  │  │  GET  /api/brew/status  - Get current brew status                  │ ││
-│  │  │  GET  /api/scale        - Get scale reading                        │ ││
-│  │  │  GET  /api/brew/flow_rate - Get calculated flow rate               │ ││
-│  │  └─────────────────────────────────────────────────────────────────────┘ ││
-│  │                                                                           ││
-│  │  ┌─────────────────────────┐  ┌─────────────────────────────────────┐  ││
-│  │  │   Async Brew Tasks      │  │      Brew Strategy Engine           │  ││
-│  │  │                         │  │                                     │  ││
-│  │  │ • collect_scale_data   │  │  AbstractBrewStrategy               │  ││
-│  │  │   (polls every 0.5s)    │  │       └── DefaultBrewStrategy      │  ││
-│  │  │                         │  │         • step()                    │  ││
-│  │  │ • brew_step_task        │  │         • target_flow_rate         │  ││
-│  │  │   (controls valve)      │  │         • epsilon (tolerance)       │  ││
-│  │  └─────────────────────────┘  └─────────────────────────────────────┘  ││
-│  └───────────────────────────────┬─────────────────────────────────────────┘│
-└───────────────────────────────────┼──────────────────────────────────────────┘
-                                    │
-           ┌────────────────────────┼────────────────────────┐
-           ▼                        ▼                        ▼
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────────┐
-│       Scale         │  │       Valve         │  │    InfluxDB            │
-│   (AbstractScale)   │  │   (AbstractValve)   │  │  (TimeSeries)          │
-├─────────────────────┤  ├─────────────────────┤  ├─────────────────────────┤
-│                     │  │                     │  │                         │
-│  ┌───────────────┐  │  │  ┌───────────────┐  │  │  • write_scale_data()  │
-│  │  LunarScale   │  │  │  │ MotorKitValve │  │  │  • get_current_weight()│
-│  │  (Bluetooth)  │  │  │  │  (I2C/USB)    │  │  │  • get_current_flow_   │
-│  └───────────────┘  │  │  └───────────────┘  │  │    rate() (aggregate   │
-│                     │  │                     │  │    rate query)          │
-│  ┌───────────────┐  │  │  ┌───────────────┐  │  │                         │
-│  │  MockScale    │  │  │  │   MockValve   │  │  └─────────────────────────┘
-│  │  (Testing)    │  │  │  │  (Testing)    │  │
-│  └───────────────┘  │  │  └───────────────┘  │
-└─────────────────────┘  └─────────────────────┘
-           │                    │
-           ▼                    ▼
-┌─────────────────────┐  ┌─────────────────────┐
-│   Acaia Lunar       │  │   Adafruit         │
-│   Scale            │  │   MotorKit         │
-│   (Bluetooth LE)   │  │   (Stepper Motor)  │
-└─────────────────────┘  └─────────────────────┘
+```mermaid
+graph TD
+    %% Frontend Layer
+    subgraph Frontend [User Interface]
+        UI[React/TypeScript Frontend<br/>Vite]
+    end
+
+    %% API Layer
+    subgraph APILayer [API Service (FastAPI - Port 8000)]
+        BrewServer[API Server]
+        BrewStrategy[Brew Strategy Engine]
+        TimeSeries[Time Series / Influx Client]
+        HttpAbstractions[HTTP Hardware Clients]
+        
+        BrewServer --> BrewStrategy
+        BrewServer --> TimeSeries
+        BrewServer --> HttpAbstractions
+    end
+
+    %% Hardware Layer
+    subgraph HardwareLayer [Hardware Service (FastAPI - Port 8001)]
+        HWServer[Hardware API Server]
+        subgraph Drivers [Hardware Drivers]
+            LunarScale[LunarScale Bluetooth]
+            MotorValve[MotorKit Valve I2C]
+        end
+        HWServer --> Drivers
+    end
+
+    %% Infrastructure Layer
+    subgraph Infra [Infrastructure]
+        InfluxDB[(InfluxDB)]
+    end
+
+    %% Physical Hardware
+    subgraph Physical [Physical Devices]
+        Scale[Acaia Lunar Scale]
+        Motor[Stepper Motor]
+    end
+
+    %% Connections
+    UI -- "REST API (Polls Status)" --> BrewServer
+    HttpAbstractions -- "HTTP REST" --> HWServer
+    TimeSeries -- "Read/Write" --> InfluxDB
+    
+    LunarScale -- "Bluetooth LE" --> Scale
+    MotorValve -- "I2C" --> Motor
 ```
 
 ### Data Flow
@@ -180,17 +160,14 @@ The `DefaultBrewStrategy` adjusts the valve to maintain a target flow rate:
 1. User clicks "Start Brew"
    └─> Frontend calls POST /api/brew/start
 
-2. Backend creates brew task and starts:
+2. API Service creates brew task and starts:
    ├─> collect_scale_data_task (every 0.5s)
-   │   └─> scale.get_weight() ──> InfluxDB.write()
+   │   └─> HW Service GET /scale ──> InfluxDB.write()
    │
    └─> brew_step_task (every N seconds)
        ├─> InfluxDB.get_current_flow_rate()
        ├─> DefaultBrewStrategy.step()
-       └─> valve.step_forward/backward()
-
-3. Frontend polls GET /api/brew/status (every 2s)
-   └─> Returns: weight, flow_rate, state, time_remaining
+       └─> HW Service POST /valve/step_forward/backward
 ```
 
 ---

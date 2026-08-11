@@ -8,6 +8,10 @@ import httpx
 from brewctl.core.valve import AbstractValve
 from brewctl.core.log import logger
 
+# The hardware service now lives on a separate host, so every command needs a
+# bound -- a wedged Pi must not hang the caller indefinitely.
+REQUEST_TIMEOUT_SECONDS = 10.0
+
 
 class HttpValve(AbstractValve):
     """HTTP valve that proxies operations to the hardware server using SSE."""
@@ -135,11 +139,19 @@ class HttpValve(AbstractValve):
         time.sleep(0.5)
         return self.available
 
-    def _request(self, method: str, path: str):
-        with httpx.Client() as client:
+    def _request(self, method: str, path: str, timeout: float = REQUEST_TIMEOUT_SECONDS):
+        with httpx.Client(timeout=timeout) as client:
             response = client.request(method, f"{self.base_url}{path}")
             response.raise_for_status()
             return response.json()
+
+    def heartbeat(self):
+        """
+        Tell the hardware watchdog a controller is still alive and holding the valve.
+        Must be called more often than the hardware's WATCHDOG_TIMEOUT_SECONDS, or the
+        hardware service will close the valve mid-brew.
+        """
+        self._request("POST", "/api/valve/heartbeat")
 
     def step_forward(self):
         self._request("POST", "/api/valve/nudge/open")

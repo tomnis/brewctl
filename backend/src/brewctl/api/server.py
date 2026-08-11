@@ -63,13 +63,11 @@ def create_time_series() -> InfluxDBTimeSeries:
     return ts
 
 
-# TODO we dont need this global anymore
 scale = HttpScale(BREWCTL_HARDWARE_URL)
 time_series: AbstractTimeSeries = create_time_series()
 weight_buffer: WeightBuffer = WeightBuffer(BREWCTL_SCALE_BUFFER_SIZE)
 
 # Valve instance - HttpValve proxies to hardware server
-# TODO we dont need this global anymore
 valve = HttpValve(BREWCTL_HARDWARE_URL)
 
 
@@ -332,6 +330,30 @@ async def collect_scale_data_task(brew_id, s):
             await asyncio.sleep(s)
 
 
+HEARTBEAT_INTERVAL_SECONDS = 3.0
+
+
+async def sleep_with_heartbeat(seconds: float):
+    """
+    Sleep, pinging the hardware watchdog along the way.
+
+    The strategy's valve interval (up to BREWCTL_VALVE_INTERVAL_SECONDS) is far longer
+    than the hardware watchdog timeout, so an unbroken sleep would let the watchdog
+    close the valve mid-brew.
+    """
+    remaining = seconds
+    while remaining > 0:
+        chunk = min(HEARTBEAT_INTERVAL_SECONDS, remaining)
+        await asyncio.sleep(chunk)
+        remaining -= chunk
+        try:
+            await asyncio.to_thread(valve.heartbeat)
+        except Exception as e:
+            # Losing the heartbeat is not fatal to the brew loop -- the watchdog
+            # closing the valve is the intended safe outcome.
+            logger.warning(f"Valve heartbeat failed: {e}")
+
+
 async def brew_step_task(brew_id, strategy):
     """brew"""
     global cur_brew
@@ -374,10 +396,11 @@ async def brew_step_task(brew_id, strategy):
                     await asyncio.to_thread(valve.step_backward)
                 # Reset state to brewing on successful valve operation
                 cur_brew.status = BrewState.BREWING
-                await asyncio.sleep(interval)
+                await sleep_with_heartbeat(interval)
             else:
-                # When paused, just sleep and check again
-                await asyncio.sleep(1)
+                # When paused, just sleep and check again. Still heartbeat: a paused
+                # brew may be holding the valve open.
+                await sleep_with_heartbeat(1)
         except Exception as e:
             logger.error(f"Error in brew step: {e}")
             traceback.print_exc()
@@ -385,7 +408,7 @@ async def brew_step_task(brew_id, strategy):
             if cur_brew is not None:
                 cur_brew.status = BrewState.ERROR
                 cur_brew.error_message = str(e)
-            await asyncio.sleep(strategy.valve_interval)
+            await sleep_with_heartbeat(strategy.valve_interval)
 
 
 def _build_base_params(req: StartBrewRequest) -> dict:

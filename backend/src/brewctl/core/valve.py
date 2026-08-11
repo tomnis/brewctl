@@ -34,6 +34,15 @@ class AbstractValve(ABC):
         """Get current absolute position (0-199 for one full rotation)."""
         pass
 
+    def heartbeat(self):
+        """
+        Signal that a controller is still alive and holding the valve.
+
+        Only meaningful for remote valves guarded by a watchdog; local valves have
+        no watchdog to feed, so this is a no-op by default.
+        """
+        pass
+
 
 class MockValve(AbstractValve):
     """A mock implementation of the Valve class for testing purposes."""

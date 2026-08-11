@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import json
@@ -50,12 +51,58 @@ def create_valve() -> AbstractValve:
     return v
 
 
-scale: AbstractScale = None  # create_scale()
-valve: AbstractValve = create_valve()
+scale: AbstractScale = None
+valve: AbstractValve = None
 
 NUDGE_MIN_INTERVAL_SECONDS = 2.0
 _nudge_last_call_time = 0.0
 _nudge_lock = threading.Lock()
+
+# Deadman switch: if the valve is off its start position and no valve command or
+# heartbeat arrives for this long, close it. Only the endpoints that touch the
+# valve (and the explicit heartbeat) feed this timer -- unrelated traffic such as
+# /health or SSE subscriptions must not keep an open valve alive.
+WATCHDOG_TIMEOUT_SECONDS = float(os.getenv("BREWCTL_WATCHDOG_TIMEOUT_SECONDS", "10.0"))
+WATCHDOG_POLL_INTERVAL_SECONDS = 1.0
+_last_valve_command_time = time.time()
+
+
+def feed_watchdog() -> None:
+    """Record that a controller is still alive and holding the valve."""
+    global _last_valve_command_time
+    _last_valve_command_time = time.time()
+
+
+async def hardware_watchdog():
+    """Close the valve if no valve command or heartbeat arrives in time."""
+    while True:
+        await asyncio.sleep(WATCHDOG_POLL_INTERVAL_SECONDS)
+        try:
+            if valve is None:
+                continue
+
+            elapsed = time.time() - _last_valve_command_time
+            if elapsed <= WATCHDOG_TIMEOUT_SECONDS:
+                continue
+
+            position = await asyncio.to_thread(valve.get_position)
+            if position <= 0:
+                continue
+
+            logger.warning(
+                f"Hardware watchdog triggered: no valve command for {elapsed:.1f}s "
+                f"(timeout {WATCHDOG_TIMEOUT_SECONDS}s), position {position}. Closing valve."
+            )
+            await asyncio.to_thread(valve.return_to_start)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Hardware watchdog error: {e}")
+        finally:
+            # Re-arm regardless of outcome so a wedged valve doesn't spam retries
+            # faster than the timeout.
+            if time.time() - _last_valve_command_time > WATCHDOG_TIMEOUT_SECONDS:
+                feed_watchdog()
 
 
 @asynccontextmanager
@@ -64,12 +111,21 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing valve...")
     valve = create_valve()
     logger.info("Valve initialized")
+    feed_watchdog()
+
+    watchdog_task = asyncio.create_task(hardware_watchdog())
 
     logger.info("Initializing scale...")
     scale = create_scale()
     logger.info("Scale initialized")
 
     yield
+
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
 
     if valve:
         valve.release()
@@ -90,7 +146,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/")
 async def root():
     return {"message": "Hello World from BrewCTL Hardware"}
@@ -101,7 +156,7 @@ async def health():
     valve_health = {"available": False, "position": None}
     try:
         if valve:
-            position = valve.get_position()
+            position = await asyncio.to_thread(valve.get_position)
             valve_health = {"available": True, "position": position}
     except Exception as e:
         logger.error(f"Error checking valve health: {e}")
@@ -114,12 +169,7 @@ async def health():
     }
     try:
         if scale and scale.connected:
-            scale_health = {
-                "connected": scale.connected,
-                "weight": scale.get_weight(),
-                "units": scale.get_units(),
-                "battery_pct": scale.get_battery_percentage(),
-            }
+            scale_health = await asyncio.to_thread(_read_scale_status)
     except Exception as e:
         logger.error(f"Error checking scale health: {e}")
 
@@ -134,13 +184,26 @@ async def health():
 # === Valve Endpoints ===
 
 
-@app.post("/api/valve/nudge/open")
-async def nudge_open():
-    global _nudge_last_call_time
-
+@app.post("/api/valve/heartbeat")
+async def heartbeat():
+    """
+    Keepalive for the watchdog. A controller holding the valve open must call this
+    more often than WATCHDOG_TIMEOUT_SECONDS, otherwise the valve is closed.
+    """
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
+    feed_watchdog()
+    position = await asyncio.to_thread(valve.get_position)
+    return {
+        "status": "ok",
+        "position": position,
+        "watchdog_timeout_seconds": WATCHDOG_TIMEOUT_SECONDS,
+    }
+
+
+def _check_nudge_rate_limit():
+    global _nudge_last_call_time
     with _nudge_lock:
         current_time = time.time()
         if current_time - _nudge_last_call_time < NUDGE_MIN_INTERVAL_SECONDS:
@@ -150,32 +213,37 @@ async def nudge_open():
             )
         _nudge_last_call_time = current_time
 
+
+@app.post("/api/valve/nudge/open")
+async def nudge_open():
+    if valve is None:
+        raise HTTPException(status_code=503, detail="valve not available")
+
+    _check_nudge_rate_limit()
+    feed_watchdog()
+
     logger.info("Valve nudge open")
-    valve.step_forward()
-    time.sleep(0.1)
-    return {"status": "nudged_open", "position": valve.get_position()}
+    await asyncio.to_thread(valve.step_forward)
+    await asyncio.sleep(0.1)
+    position = await asyncio.to_thread(valve.get_position)
+    feed_watchdog()
+    return {"status": "nudged_open", "position": position}
 
 
 @app.post("/api/valve/nudge/close")
 async def nudge_close():
-    global _nudge_last_call_time
-
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
-    with _nudge_lock:
-        current_time = time.time()
-        if current_time - _nudge_last_call_time < NUDGE_MIN_INTERVAL_SECONDS:
-            raise HTTPException(
-                status_code=429,
-                detail=f"nudge too frequent, wait {NUDGE_MIN_INTERVAL_SECONDS} seconds",
-            )
-        _nudge_last_call_time = current_time
+    _check_nudge_rate_limit()
+    feed_watchdog()
 
     logger.info("Valve nudge close")
-    valve.step_backward()
-    time.sleep(0.1)
-    return {"status": "nudged_closed", "position": valve.get_position()}
+    await asyncio.to_thread(valve.step_backward)
+    await asyncio.sleep(0.1)
+    position = await asyncio.to_thread(valve.get_position)
+    feed_watchdog()
+    return {"status": "nudged_closed", "position": position}
 
 
 @app.post("/api/valve/return_to_start")
@@ -183,9 +251,12 @@ async def return_to_start():
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
+    feed_watchdog()
     logger.info("Valve returning to start")
-    valve.return_to_start()
-    return {"status": "returned_to_start", "position": valve.get_position()}
+    await asyncio.to_thread(valve.return_to_start)
+    position = await asyncio.to_thread(valve.get_position)
+    feed_watchdog()
+    return {"status": "returned_to_start", "position": position}
 
 
 @app.post("/api/valve/release")
@@ -193,9 +264,12 @@ async def release():
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
+    feed_watchdog()
     logger.info("Valve released")
-    valve.release()
-    return {"status": "released", "position": valve.get_position()}
+    await asyncio.to_thread(valve.release)
+    position = await asyncio.to_thread(valve.get_position)
+    feed_watchdog()
+    return {"status": "released", "position": position}
 
 
 @app.get("/api/valve/position")
@@ -203,7 +277,7 @@ async def get_position():
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
-    return {"position": valve.get_position()}
+    return {"position": await asyncio.to_thread(valve.get_position)}
 
 
 @app.get("/api/valve/status")
@@ -212,7 +286,7 @@ async def get_status():
         return {"available": False, "position": None, "status": "not_initialized"}
 
     try:
-        position = valve.get_position()
+        position = await asyncio.to_thread(valve.get_position)
         return {"available": True, "position": position, "status": "ready"}
     except Exception as e:
         logger.error(f"Error getting valve status: {e}")
@@ -234,7 +308,7 @@ async def sse_valve_status_generator() -> AsyncGenerator[str, None]:
                 continue
 
             try:
-                position = valve.get_position()
+                position = await asyncio.to_thread(valve.get_position)
                 status = {"available": True, "position": position}
             except Exception as e:
                 logger.error(f"Error getting valve position in SSE: {e}")
@@ -263,6 +337,18 @@ async def sse_valve_status():
 
 # === Scale Endpoints ===
 
+
+def _read_scale_status() -> dict:
+    """Read all scale values. Blocking (BLE) -- call via asyncio.to_thread."""
+    connected = scale.connected
+    return {
+        "connected": connected,
+        "weight": scale.get_weight() if connected else None,
+        "units": scale.get_units() if connected else None,
+        "battery_pct": scale.get_battery_percentage() if connected else None,
+    }
+
+
 async def sse_scale_status_generator() -> AsyncGenerator[str, None]:
     """SSE generator for real-time scale status updates."""
     try:
@@ -272,14 +358,7 @@ async def sse_scale_status_generator() -> AsyncGenerator[str, None]:
                 await asyncio.sleep(SCALE_SSE_INTERVAL)
                 continue
 
-            status = {
-                "connected": scale.connected,
-                "weight": scale.get_weight() if scale.connected else None,
-                "units": scale.get_units() if scale.connected else None,
-                "battery_pct": scale.get_battery_percentage()
-                if scale.connected
-                else None,
-            }
+            status = await asyncio.to_thread(_read_scale_status)
             yield f"data: {json.dumps(status)}\n\n"
             await asyncio.sleep(SCALE_SSE_INTERVAL)
     except asyncio.CancelledError:
@@ -306,12 +385,7 @@ async def get_scale_status():
     if scale is None:
         raise HTTPException(status_code=503, detail="scale not available")
 
-    return {
-        "connected": scale.connected,
-        "weight": scale.get_weight() if scale.connected else None,
-        "units": scale.get_units() if scale.connected else None,
-        "battery_pct": scale.get_battery_percentage() if scale.connected else None,
-    }
+    return await asyncio.to_thread(_read_scale_status)
 
 
 @app.post("/api/scale/connect")
@@ -320,7 +394,7 @@ async def connect_scale():
         logger.info("scale is none")
         raise HTTPException(status_code=503, detail="scale not available")
 
-    scale.connect()
+    await asyncio.to_thread(scale.connect)
     return {"status": "connected" if scale.connected else "failed"}
 
 
@@ -329,5 +403,5 @@ async def disconnect_scale():
     if scale is None:
         raise HTTPException(status_code=503, detail="scale not available")
 
-    scale.disconnect()
+    await asyncio.to_thread(scale.disconnect)
     return {"status": "disconnected"}
