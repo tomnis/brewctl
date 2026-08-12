@@ -176,8 +176,8 @@ graph TD
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- For production: Raspberry Pi with:
+- Docker and Docker Compose (development, and the NAS in production)
+- For production, a Raspberry Pi with:
   - Bluetooth adapter
   - Acaia Lunar scale
   - Adafruit MotorKit with stepper motor
@@ -185,32 +185,78 @@ graph TD
 ### Development Mode
 
 ```bash
-# Clone the repository
-git clone git@github.com:tomnis/api.git
-cd api
-
-# Start all services (backend, frontend, influxdb)
 make dev
 ```
 
-Services will be available at:
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **InfluxDB**: http://localhost:8086
+All three services run locally, with the hardware service in mock mode
+(`BREWCTL_IS_PROD=false` selects `MockScale`/`MockValve`), so no physical hardware
+is needed:
 
-### Production Mode
+- **Frontend**: http://localhost:5173 (vite dev server)
+- **API**: http://localhost:8000
+- **Hardware**: http://localhost:8001
+
+InfluxDB is not part of the compose stack; point `BREWCTL_INFLUXDB_URL` at an
+existing instance in `.env`, or leave it unset to run without time series.
+
+### Production: two hosts
+
+Production is split across two machines. See [Deployment](#deployment).
+
+| | Runs | Where | How |
+|---|---|---|---|
+| **Hardware service** | `BREWCTL_MODE=hardware` | Raspberry Pi | Bare metal, systemd |
+| **API + frontend** | `BREWCTL_MODE=api` | TrueNAS | Docker Compose |
+
+The Pi owns the physical devices; the api holds the brewing logic and serves the
+built frontend at `/app`, so the UI and the API are same-origin.
+
+---
+
+## Deployment
+
+### Hardware service (Raspberry Pi, bare metal)
+
+The Pi is a Pi Zero 2 W with 416 MB of RAM and no Docker. Deployment is a git
+push to a bare repo, whose `post-receive` hook refreshes the venv and restarts
+the unit.
+
+First-time setup, on the Pi:
 
 ```bash
-# Set required environment variables
-export BREWCTL_INFLUXDB_URL="http://influxdb:8086"
-export BREWCTL_INFLUXDB_TOKEN="your-token"
-export BREWCTL_INFLUXDB_ORG="your-org"
-export BREWCTL_SCALE_MAC_ADDRESS="XX:XX:XX:XX:XX:XX"
-export BREWCTL_FRONTEND_API_URL="http://backend:8000/api"
-
-# Build and run
-make build-prod-image
+git clone <this repo> ~/coldbrewer          # or push to ~/coldbrewer.git
+cp deploy/pi/post-receive ~/coldbrewer.git/hooks/ && chmod +x ~/coldbrewer.git/hooks/post-receive
+~/coldbrewer/deploy/pi/install.sh
+sudoedit /etc/brewctl/hardware.env          # set BREWCTL_SCALE_MAC_ADDRESS
+sudo systemctl restart brewctl-hardware
 ```
+
+`install.sh` creates the venv from `requirements/hardware.txt`, verifies the
+device libraries import, installs `brewctl-hardware.service`, and disables the
+old `coldbrew-backend`/`coldbrew-frontend` units.
+
+Thereafter, `make deploy-pi` (a `git push`) is the whole deploy.
+
+**Always confirm it is driving real hardware.** `BREWCTL_IS_PROD` defaults to
+false, and when it is not exactly `true` the service starts happily on
+`MockScale`/`MockValve` — `/health` reports healthy and nothing physical moves:
+
+```bash
+journalctl -u brewctl-hardware | grep -iE 'production|mock'
+# want: "Initializing production [ac lunar] scale" / "Initializing production valve"
+```
+
+### API + frontend (TrueNAS, Docker)
+
+```bash
+cp deploy/nas/.env.example deploy/nas/.env   # set the Influx token and the Pi's IP
+docker compose -f deploy/nas/docker-compose.yml up -d --build
+```
+
+UI at `http://<nas>:8000/app`, API at `http://<nas>:8000/api`.
+
+Address the Pi by **IP**, not `coldbrewer.local` — mDNS does not resolve inside a
+container. Give the Pi a DHCP reservation.
 
 ---
 
@@ -249,19 +295,49 @@ make build-prod-image
 
 ### Environment Variables
 
+Values are read at import time, so changes require a process restart.
+
+**Both services**
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BREWCTL_IS_PROD` | `false` | Production mode flag |
-| `BREWCTL_SCALE_MAC_ADDRESS` | - | Bluetooth MAC of Lunar scale |
-| `BREWCTL_INFLUXDB_URL` | required | InfluxDB URL |
-| `BREWCTL_INFLUXDB_TOKEN` | required | InfluxDB auth token |
-| `BREWCTL_INFLUXDB_ORG` | required | InfluxDB organization |
-| `BREWCTL_INFLUXDB_BUCKET` | `brewctl` | InfluxDB bucket name |
+| `BREWCTL_MODE` | `api` | `api` or `hardware`. Selects the app in `main.py` |
+| `BREWCTL_IS_PROD` | `false` | Production mode. On the hardware service, anything other than `true` selects `MockScale`/`MockValve` |
 | `BREWCTL_TARGET_FLOW_RATE` | `0.05` | Target flow rate (g/s) |
 | `BREWCTL_TARGET_WEIGHT_GRAMS` | `1337` | Target brew weight (g) |
 | `BREWCTL_EPSILON` | `0.008` | Flow rate tolerance |
 | `BREWCTL_VALVE_INTERVAL_SECONDS` | `90` | Valve check interval |
 | `BREWCTL_SCALE_READ_INTERVAL` | `0.5` | Scale polling interval |
+
+**Hardware service only** (the Pi — `/etc/brewctl/hardware.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BREWCTL_SCALE_MAC_ADDRESS` | - | Bluetooth MAC of the Lunar scale |
+| `BREWCTL_VALVE_MOTOR_NUMBER` | `1` | MotorKit stepper driving the valve (1 or 2) |
+| `BREWCTL_WATCHDOG_TIMEOUT_SECONDS` | `10.0` | Deadman switch: close the valve if no valve command or heartbeat arrives in this long |
+
+**API service only** (the NAS — `deploy/nas/.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BREWCTL_HARDWARE_URL` | - | The Pi's address, e.g. `http://192.168.0.224:8000`. Use an IP, not mDNS |
+| `BREWCTL_INFLUXDB_URL` | - | InfluxDB URL. Unset disables time series |
+| `BREWCTL_INFLUXDB_TOKEN` | - | InfluxDB auth token |
+| `BREWCTL_INFLUXDB_ORG` | - | InfluxDB organization |
+| `BREWCTL_INFLUXDB_BUCKET` | `coldbrew` | Bucket name. `-dev` is appended unless `BREWCTL_IS_PROD=true` |
+| `BREWCTL_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins. Only matters when the UI is not served by the api |
+
+**Frontend** (build time)
+
+Vite's `envPrefix` is `BREWCTL_FRONTEND_`, deliberately narrower than `BREWCTL_` —
+anything matching the prefix in the build environment lands in the client bundle,
+and `BREWCTL_INFLUXDB_TOKEN` must never get there.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BREWCTL_FRONTEND_API_URL` | `${window.location.origin}/api` | Dev-time override. Leave unset in production, where the api serves the bundle same-origin |
+| `BREWCTL_FRONTEND_IS_PROD` | `false` | Cosmetic; drives the page title and the header flag |
 
 ---
 
@@ -439,47 +515,61 @@ MotorKit (I2C address 0x60)
 ```
 brewctl/
 ├── backend/
-│   ├── src/
-│   │   ├── brewctl/           # Main application
-│   │   │   ├── server.py      # FastAPI app & endpoints
-│   │   │   ├── model.py       # Pydantic models
+│   ├── src/brewctl/
+│   │   ├── main.py            # Entrypoint; dispatches on BREWCTL_MODE
+│   │   ├── core/              # Shared by both modes
+│   │   │   ├── model.py       # Pydantic models & enums
 │   │   │   ├── scale.py       # AbstractScale + MockScale
 │   │   │   ├── valve.py       # AbstractValve + MockValve
-│   │   │   ├── time_series.py # InfluxDB integration
-│   │   │   ├── brew_strategy.py # Brewing strategies
-│   │   │   ├── config.py      # Configuration
-│   │   │   └── pi/            # Hardware implementations
-│   │   │       ├── LunarScale.py
-│   │   │       └── MotorKitValve.py
-│   └── tests/                 # Backend tests
+│   │   │   ├── config.py      # Shared configuration
+│   │   │   └── log.py
+│   │   ├── hardware/          # Runs on the Pi; owns the devices
+│   │   │   ├── server.py      # Device endpoints, SSE, valve watchdog
+│   │   │   ├── LunarScale.py  # Acaia Lunar over BLE
+│   │   │   └── MotorKitValve.py  # Stepper over I2C
+│   │   └── api/               # Runs on the NAS; no direct hardware access
+│   │       ├── server.py      # Brew endpoints, SSE/WS, serves the UI at /app
+│   │       ├── http_scale.py  # AbstractScale over the hardware service's SSE
+│   │       ├── http_valve.py  # AbstractValve over HTTP + SSE
+│   │       ├── strategies/    # Brewing strategies (self-registering)
+│   │       └── time_series.py # InfluxDB integration
+│   ├── requirements/          # base / hardware / api / dev
+│   └── tests/
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── components/        # React components
-│   │   │   ├── brew/          # Brew-related components
-│   │   │   └── theme/         # Theme context
-│   │   └── App.tsx            # Main app
+│   ├── src/components/        # React components (brew/, theme/)
 │   └── package.json
 │
-├── docker-compose.yml         # Dev environment
-├── unified-docker-compose.yml # Production
-├── Makefile                   # Build commands
+├── deploy/
+│   ├── pi/                    # systemd unit, env file, install.sh, git hook
+│   └── nas/                   # docker compose for api + frontend
+│
+├── Dockerfile                 # Production api image (bundles the frontend)
+├── docker-compose.yml         # Local dev, all three services
+├── Makefile
 └── README.md
 ```
 
 ### Running Backend Directly
 
+Both modes share one entrypoint, `src/brewctl/main.py`, selected by `BREWCTL_MODE`.
+
 ```bash
 cd backend
-source bin/activate  # if using venv
-pip install -r requirements/base.txt
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements/dev.txt        # api deps + pytest
+export PYTHONPATH=src
 
-# Development (uses mocks)
-fastapi dev src/api/server.py --host 0.0.0.0 --port 8000
+# API service (mocks the hardware service if it is not running)
+BREWCTL_MODE=api      fastapi dev src/brewctl/main.py --port 8000
 
-# Production (uses real hardware)
-BREWCTL_IS_PROD=true BREWCTL_SCALE_MAC_ADDRESS=... \
-  BREWCTL_INFLUXDB_URL=... fastapi dev src/api/server.py
+# Hardware service, mock devices
+BREWCTL_MODE=hardware fastapi dev src/brewctl/main.py --port 8001
+
+# Hardware service, real devices -- only works on the Pi, and needs the
+# device libraries: pip install -r requirements/hardware.txt
+BREWCTL_MODE=hardware BREWCTL_IS_PROD=true BREWCTL_SCALE_MAC_ADDRESS=XX:XX:XX:XX:XX:XX \
+  fastapi dev src/brewctl/main.py --port 8001
 ```
 
 ### Running Frontend Directly

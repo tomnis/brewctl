@@ -1,0 +1,30 @@
+# Hardware service (BREWCTL_MODE=hardware). Runs bare metal on the Raspberry Pi.
+# Replaces the old pi.txt.
+#
+# Both device libraries are imported lazily inside create_scale()/create_valve()
+# behind BREWCTL_IS_PROD, so dev machines can install this file without the
+# hardware present -- but only the Pi actually needs it.
+-r base.txt
+
+# Acaia Lunar scale over BLE. pyacaia drives bluepy, which ships the
+# bluepy-helper binary the scale connection actually runs on.
+pyacaia==0.4.0
+pyacaia_async==0.1.2
+bluepy==1.3.0
+
+# Stepper valve over I2C via the Adafruit MotorKit HAT.
+Adafruit-Blinka==8.66.2
+adafruit-circuitpython-busdevice==5.2.13
+adafruit-circuitpython-connectionmanager==3.1.5
+adafruit-circuitpython-motor==3.4.17
+adafruit-circuitpython-motorkit==1.6.18
+adafruit-circuitpython-pca9685==3.4.19
+adafruit-circuitpython-register==1.11.0
+adafruit-circuitpython-requests==4.1.13
+adafruit-circuitpython-typing==1.12.2
+Adafruit-PlatformDetect==3.84.1
+Adafruit-PureIO==1.1.11
+# Blinka transitives, pinned rather than left floating -- Blinka's board
+# detection is the last thing we want shifting under the Pi.
+RPi.GPIO==0.7.1
+sysv_ipc==1.1.0

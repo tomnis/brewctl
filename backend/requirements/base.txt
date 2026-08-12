@@ -1,21 +1,5 @@
-certifi==2025.10.5
-dbus-fast==2.44.3
-decorator==5.2.1
-influxdb-client==1.49.0
-httpx==0.28.1
-pyftdi==0.57.1
-pyserial==3.5
-python-dateutil==2.9.0.post0
-pyusb==1.3.1
-reactivex==4.0.4
-retry==0.9.2
-setuptools==80.9.0
-six==1.17.0
-typing_extensions==4.15.0
-urllib3==2.5.0
-fastapi==0.128.0
-requests==2.32.5
+# Shared by every mode. Keep this minimal -- it is installed on the Pi Zero 2 W
+# (416 MB RAM) as well as in the api container.
+# Mode-specific deps live in hardware.txt / api.txt; test deps in dev.txt.
 fastapi[standard]==0.128.0
 fastapi-cli==0.0.20
-pytest==9.0.2
-websockets==14.1

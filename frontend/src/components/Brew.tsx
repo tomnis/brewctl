@@ -94,7 +94,7 @@ function BrewInner() {
   const isActive = brewState === "brewing" || brewState === "paused";
   const valvePosition = brewInProgress?.valve_position ?? null;
 
-  const flag = import.meta.env.VITE_COLDBREW_IS_PROD === 'true' ? "--dev" : "--dev";
+  const flag = import.meta.env.BREWCTL_FRONTEND_IS_PROD === 'true' ? "--prod" : "--dev";
 
 
   const front = (

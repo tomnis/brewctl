@@ -1,10 +1,31 @@
-name: Build Docker Image
+name: Build and test
 
 on: [push]
 
 jobs:
+  test:
+    runs-on: docker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Backend tests
+        run: |
+          cd backend
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements/dev.txt
+          .venv/bin/pytest tests
+
+      - name: Frontend tests and build
+        run: |
+          cd frontend
+          npm ci --no-audit
+          npm run test:run
+          npm run build
+
   build:
     runs-on: docker
+    needs: test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -12,10 +33,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      # Builds the api image, which bundles the frontend and serves it at /app.
+      # No BREWCTL_FRONTEND_API_URL build arg on purpose: leaving it unset makes
+      # the bundle address its own origin, so one image works behind any host.
+      #
+      # The hardware service is not built here -- it runs bare metal on the Pi,
+      # deployed by git push (see deploy/pi/).
+      #
+      # TODO: push to the registry once the runner and insecure-registry setup
+      # land; then deploy/nas/docker-compose.yml swaps `build:` for `image:`.
+      - name: Build api image
         uses: docker/build-push-action@v5
         with:
           context: .
           load: true
-          build-args: |
-            BREWCTL_FRONTEND_API_URL=http://localhost:8000
+          tags: brewctl-api:${{ github.sha }}

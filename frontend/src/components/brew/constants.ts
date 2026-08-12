@@ -1,5 +1,10 @@
 // Derive WebSocket URL from API URL (replace /api with empty string, change http to ws)
-const getApiUrl = () => import.meta.env.COLDBREW_FRONTEND_API_URL as string || "http://localhost:8000/api";
+//
+// In production the api service serves this bundle itself at /app, so the API is
+// same-origin and needs no configuration. The env var is the dev-time override,
+// for when vite is on :5173 and the api is on :8000.
+const getApiUrl = () =>
+  (import.meta.env.BREWCTL_FRONTEND_API_URL as string) || `${window.location.origin}/api`;
 export const apiUrl = getApiUrl();
 
 // WebSocket URL for real-time brew status updates

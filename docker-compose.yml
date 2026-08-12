@@ -1,3 +1,5 @@
+# Local development only: all three services on one host, hardware in mock mode.
+# Production is split across two hosts -- see deploy/pi/ and deploy/nas/.
 services:
   hardware:
     build: ./backend
@@ -28,8 +30,11 @@ services:
   frontend:
     build: ./frontend
     environment:
-      - BREWCTL_FRONTEND_API_URL=${BREWCTL_FRONTEND_API_URL}
-      - BREWCTL_IS_PROD=false
+      # Vite's envPrefix is BREWCTL_FRONTEND_, so only these two reach the
+      # bundle. In dev the api is on a different port than vite, so the URL must
+      # be set explicitly; in production it is unset and resolves same-origin.
+      - BREWCTL_FRONTEND_API_URL=${BREWCTL_FRONTEND_API_URL:-http://localhost:8000/api}
+      - BREWCTL_FRONTEND_IS_PROD=false
     ports:
       - "5173:5173"
     volumes:

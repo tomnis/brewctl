@@ -29,8 +29,17 @@ BREWCTL_MODE=hardware fastapi dev src/brewctl/main.py --port 8001
 ## Architecture
 
 Two FastAPI apps from one Python package plus a React/Vite frontend. `brewctl/main.py` is the single
-entrypoint: it reads `BREWCTL_MODE` (`api` | `hardware`) and imports the corresponding `app`. Both
-containers build from the same `backend/Dockerfile`; mode is set per-service in `docker-compose.yml`.
+entrypoint: it reads `BREWCTL_MODE` (`api` | `hardware`) and imports the corresponding `app`.
+
+**Production is split across two hosts.** The hardware service runs *bare metal* on
+`coldbrewer.local` (Pi Zero 2 W, arm64, 416 MB RAM, **no Docker**) under systemd — see `deploy/pi/`.
+The api runs in Docker on the TrueNAS box and serves the built frontend at `/app`, so the UI is
+same-origin with the API — see `deploy/nas/`. Locally, `docker-compose.yml` still runs all three from
+`backend/Dockerfile` with the hardware service in mock mode.
+
+Requirements are split per deployment target: `base.txt` (shared) → `hardware.txt` (Pi devices:
+pyacaia/bluepy, Adafruit MotorKit) and `api.txt` (influxdb-client, httpx); `dev.txt` is api + pytest
+and deliberately excludes `hardware.txt`, whose `bluepy`/`RPi.GPIO` will not build off-Pi.
 
 - **`brewctl/core/`** — shared across both modes: `model.py` (Pydantic/enums: `BrewState`,
   `ValveCommand`, `BrewStrategyType`, `Brew`, `BrewStatus`), `config.py` (shared env vars),
@@ -89,16 +98,25 @@ SSE/WS URLs too.
 
 ## Gotchas
 
-- **Env var prefix mismatch**: `vite.config.ts` sets `envPrefix: 'COLDBREW_FRONTEND_API_URL'` and the
-  frontend reads `import.meta.env.COLDBREW_FRONTEND_API_URL`, but compose/Makefile pass
-  `BREWCTL_FRONTEND_API_URL`. Legacy `COLDBREW_*` naming survives in a few build paths.
-- `make build-prod-image` references `unified-docker-compose.yml`, which is no longer in the tree.
-- `README.md` predates the api/hardware split: its file paths (`brewctl/server.py`,
-  `brewctl/pi/`) and endpoint table are partly stale — trust the source.
+- **`BREWCTL_IS_PROD` failing silently is the worst failure mode in this repo.** Anything other than
+  the exact string `true` makes the hardware service run `MockScale`/`MockValve`: it starts cleanly,
+  `/health` reports healthy, and no physical device moves. After any config change on the Pi, check
+  `journalctl -u brewctl-hardware | grep -iE 'production|mock'`.
+- **Vite `envPrefix` is `BREWCTL_FRONTEND_`, not `BREWCTL_`** — anything matching the prefix in the
+  build environment is inlined into the client bundle, and `BREWCTL_INFLUXDB_TOKEN` shares the
+  `BREWCTL_` namespace. Never widen it. Only `BREWCTL_FRONTEND_API_URL` and
+  `BREWCTL_FRONTEND_IS_PROD` are exposed; both are declared in `src/vite-env.d.ts`.
+- The frontend's API URL defaults to `${window.location.origin}/api` and `vite.config.ts` uses a
+  relative `base: "/app/"` — production needs no URL configuration. Set `BREWCTL_FRONTEND_API_URL`
+  only in dev, where vite (:5173) and the api (:8000) are different origins.
 - Config modules use `import *` chains (`core.config` → `api.config` → `model` → `server`), and
   values are read at import time, so env changes require a process restart, and tests that need
   different config must patch the module attribute.
 - `api/config.py` appends `-dev` to `BREWCTL_INFLUXDB_BUCKET` unless `BREWCTL_IS_PROD=true`.
-- Pi-only deps (`bleak`, `RPi.GPIO`, Adafruit MotorKit) are in `requirements/pi.txt` and are not
-  installed by the Dockerfile (`base.txt` only) — production hardware imports are done lazily inside
+- Hardware device deps (`bluepy`, `RPi.GPIO`, Adafruit MotorKit) are in `requirements/hardware.txt`
+  and install only on the Pi — production hardware imports are done lazily inside
   `create_scale()`/`create_valve()` to keep dev machines working.
+- `tests/api/conftest.py` patches `HttpScale`/`HttpValve` as *classes*, but `api/server.py`
+  instantiates them at import time. A test module with a top-level `import brewctl.api.server` binds
+  the real classes and breaks ~12 unrelated tests with 503s — import the module inside a fixture that
+  depends on `client`.

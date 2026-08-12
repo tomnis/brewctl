@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+# Git hook for the Pi's bare repo. Install to ~/coldbrewer.git/hooks/post-receive.
+#
+# The previous version only checked the tree out, so a push dropped new files on
+# disk and left the old process running against them. This one also refreshes
+# dependencies and restarts the service.
+
+set -euo pipefail
+
+GIT_DIR="$HOME/coldbrewer.git"
+TARGET="$HOME/coldbrewer"
+
+mkdir -p "$TARGET"
+echo "Deploying to $(hostname)..."
+git --work-tree="$TARGET" --git-dir="$GIT_DIR" checkout -f
+
+# --deps-only: refresh the venv and restart. Unit/env/sudoers changes still need
+# a manual `./deploy/pi/install.sh`, since those touch /etc and want eyes on them.
+exec "$TARGET/deploy/pi/install.sh" --deps-only

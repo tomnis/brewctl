@@ -1,0 +1,51 @@
+# BrewCTL on the TrueNAS box: api + bundled frontend.
+#
+# The hardware service is NOT here -- it runs bare metal on the Raspberry Pi
+# (deploy/pi/). This compose file only needs to reach it over the LAN.
+#
+#   docker compose -f deploy/nas/docker-compose.yml up -d --build
+#
+# UI:  http://<nas>:8000/app
+# API: http://<nas>:8000/api
+#
+# When the registry and Forgejo runner land, replace `build:` with
+# `image: <registry>/brewctl-api:<tag>` -- nothing else here changes.
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      BREWCTL_MODE: api
+      BREWCTL_IS_PROD: "true"
+
+      # The Pi, by IP. Do not use coldbrewer.local here: mDNS does not resolve
+      # inside a container without extra plumbing. Give the Pi a DHCP
+      # reservation so this stays valid.
+      BREWCTL_HARDWARE_URL: "http://${BREWCTL_PI_IP:-192.168.0.224}:8000"
+
+      BREWCTL_INFLUXDB_URL: "${BREWCTL_INFLUXDB_URL}"
+      BREWCTL_INFLUXDB_TOKEN: "${BREWCTL_INFLUXDB_TOKEN}"
+      BREWCTL_INFLUXDB_ORG: "${BREWCTL_INFLUXDB_ORG}"
+      BREWCTL_INFLUXDB_BUCKET: "${BREWCTL_INFLUXDB_BUCKET:-coldbrew}"
+
+      BREWCTL_VALVE_INTERVAL_SECONDS: "${BREWCTL_VALVE_INTERVAL_SECONDS:-90}"
+      BREWCTL_TARGET_WEIGHT_GRAMS: "${BREWCTL_TARGET_WEIGHT_GRAMS:-1337}"
+      BREWCTL_VESSEL_WEIGHT_GRAMS: "${BREWCTL_VESSEL_WEIGHT_GRAMS:-229}"
+
+      # Same-origin in production, so this is only a safety net for anyone
+      # pointing a separately-hosted UI at this api.
+      BREWCTL_CORS_ORIGINS: "${BREWCTL_CORS_ORIGINS:-}"
+
+    healthcheck:
+      # Checks the api itself, not the Pi -- the api must stay up and reporting
+      # even when the hardware service is unreachable.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

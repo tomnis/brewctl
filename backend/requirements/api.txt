@@ -1,0 +1,21 @@
+# API service (BREWCTL_MODE=api). Runs in Docker on the NAS.
+# Replaces the old backend.txt. No device libraries -- the api reaches hardware
+# over HTTP/SSE only.
+-r base.txt
+
+# Time series storage (api/time_series.py).
+influxdb-client==1.49.0
+retry==0.9.2
+# influxdb-client transitives, pinned.
+reactivex==4.0.4
+python-dateutil==2.9.0.post0
+certifi==2025.10.5
+urllib3==2.5.0
+six==1.17.0
+
+# HTTP + SSE client for the hardware service (api/http_scale.py, api/http_valve.py).
+httpx==0.28.1
+
+# Serves the /ws/* endpoints in api/server.py. Also arrives transitively via
+# fastapi[standard] -> uvicorn[standard]; pinned here so it is not left to chance.
+websockets==14.1

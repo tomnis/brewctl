@@ -98,12 +98,17 @@ Kill endpoints are also provided to forcefully kill an in-progress brew.
 """
 app = FastAPI(lifespan=lifespan)
 
-origins = [
-    "http://localhost:5173",
-    BREWCTL_FRONTEND_API_URL,
-    BREWCTL_FRONTEND_ORIGIN,
-    "localhost:5173",
-]
+# In production the api serves the frontend itself at /app, so requests are
+# same-origin and CORS never comes into play. This list only matters for local
+# development, where vite runs on :5173 and the api on :8000.
+#
+# Entries must be *origins* (scheme://host:port, no path). The previous list
+# included BREWCTL_FRONTEND_API_URL -- an API endpoint ending in /api, which can
+# never match an Origin header -- and a schemeless "localhost:5173".
+origins = list(
+    dict.fromkeys(o.strip() for o in BREWCTL_CORS_ORIGINS + [BREWCTL_FRONTEND_ORIGIN] if o and o.strip())
+)
+logger.info(f"CORS allow_origins = {origins}")
 
 
 app.add_middleware(

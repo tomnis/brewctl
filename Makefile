@@ -1,8 +1,22 @@
-dev: 
-	docker compose build && docker compose up 
+NAS_COMPOSE := deploy/nas/docker-compose.yml
 
+# Local development: all three services on one host, hardware in mock mode.
+dev:
+	docker compose build && docker compose up
+
+# Build the production api image (bundles the frontend, served at /app).
 build-prod-image:
-	docker compose -f unified-docker-compose.yml build  --build-arg BREWCTL_FRONTEND_API_URL=${COLDBREW_FRONTEND_API_URL} && docker compose -f unified-docker-compose.yml up -d
+	docker compose -f $(NAS_COMPOSE) build
+
+# Deploy api + frontend to the NAS. Run this on the NAS, with deploy/nas/.env in place.
+deploy-nas:
+	docker compose -f $(NAS_COMPOSE) up -d --build
+
+# Deploy the hardware service to the Pi. Bare metal -- no Docker on that box.
+# The post-receive hook refreshes deps and restarts the unit; run
+# deploy/pi/install.sh on the Pi itself for the first install or unit changes.
+deploy-pi:
+	git push pi $$(git rev-parse --abbrev-ref HEAD)
 
 testBackend:
 	cd backend && pytest tests
@@ -12,13 +26,7 @@ testFrontend:
 
 test: testBackend testFrontend
 
-#prod:
-#    cd frontend && npm install && npm run build && cd ..
-#    mkdir backend/src/build
-#    cp -r frontend/dist/* backend/src/build/
-#    cd backend
-#    source bin/activate && pip install -r requirements/base.txt && pip install -r requirements/pi.txt
-#    fastapi dev src/brewctl/api/server.py --host 0.0.0.0
+lint:
+	cd frontend && npm run lint
 
-
-
+.PHONY: dev build-prod-image deploy-nas deploy-pi testBackend testFrontend test lint
