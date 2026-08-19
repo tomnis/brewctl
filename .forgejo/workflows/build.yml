@@ -99,10 +99,20 @@ jobs:
           fi
 
   ship:
-    runs-on: docker
+    # dind, not docker: the `docker` label's image has no docker CLI or daemon
+    # ("docker: command not found"). Everything below builds, runs, and saves
+    # images, so it needs the daemon; the test job does not and stays on docker.
+    runs-on: dind
     needs: test
     steps:
       - uses: actions/checkout@v4
+
+      # The dind image is minimal and ssh is how the image leaves this box.
+      - name: Ensure ssh client
+        run: |
+          command -v ssh >/dev/null && exit 0
+          if command -v apk >/dev/null; then apk add --no-cache openssh-client
+          else apt-get update -qq && apt-get install -y -qq openssh-client; fi
 
       - name: Determine tags
         id: tag
