@@ -15,7 +15,9 @@ build-prod-image:
 
 # Apply the manifest to the TrueNAS custom app. Needs TRUENAS_URL and
 # TRUENAS_API_KEY. There is no compose build here -- a TrueNAS Custom App
-# deploys from a registry image, not from source.
+# deploys from an image, not from source. The image reference comes from
+# deploy/nas/image.tag, substituted into the manifest's @IMAGE@ by apply.sh;
+# preview it with `./deploy/nas/apply.sh deploy/nas/app.yaml --render`.
 deploy-nas:
 	./deploy/nas/apply.sh $(NAS_MANIFEST)
 

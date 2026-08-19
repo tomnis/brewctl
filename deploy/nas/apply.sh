@@ -2,7 +2,18 @@
 #
 # Apply deploy/nas/app.yaml to the TrueNAS custom app.
 #
-#   ./deploy/nas/apply.sh deploy/nas/app.yaml [--force]
+#   ./deploy/nas/apply.sh deploy/nas/app.yaml [--force] [--render] [--image REF]
+#
+#   --force        deploy even during an active brew, or when brew state is unknown
+#   --render       print the rendered manifest and exit; no network calls
+#   --image REF    use REF instead of image.tag. For an emergency rollback to an
+#                  image already on the box -- leaves the running app diverged
+#                  from git, so follow it with a real commit.
+#
+# The manifest carries an @IMAGE@ placeholder; the deployed reference lives in
+# image.tag beside it (override with --image-tag-file). Splitting them is what
+# makes a promotion a one-line diff in a file that contains nothing else, and lets
+# the deploy workflow trigger on exactly that file.
 #
 # env:
 #   TRUENAS_URL       https://192.168.0.69
@@ -25,9 +36,24 @@
 
 set -euo pipefail
 
-MANIFEST="${1:-}"
+MANIFEST=""
 FORCE=0
-[[ "${2:-}" == "--force" ]] && FORCE=1
+RENDER_ONLY=0
+IMAGE_REF=""
+IMAGE_TAG_FILE=""
+
+while (( $# )); do
+    case "$1" in
+        --force)          FORCE=1 ;;
+        --render)         RENDER_ONLY=1 ;;
+        --image)          IMAGE_REF="${2:-}"; shift ;;
+        --image-tag-file) IMAGE_TAG_FILE="${2:-}"; shift ;;
+        -h|--help)        sed -n '2,20p' "$0"; exit 0 ;;
+        -*)               printf 'unknown option: %s\n' "$1" >&2; exit 1 ;;
+        *)                MANIFEST="$1" ;;
+    esac
+    shift
+done
 
 TRUENAS_APP="${TRUENAS_APP:-brewctl-api}"
 BREWCTL_API_URL="${BREWCTL_API_URL:-http://192.168.0.69:8000}"
@@ -38,10 +64,57 @@ DEPLOY_TIMEOUT_SECONDS="${DEPLOY_TIMEOUT_SECONDS:-180}"
 CURL=(curl -sk --max-time 30)
 
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+# Progress goes to stderr, not stdout: `--render` writes the manifest to stdout
+# and it must be pipeable into a YAML parser without ANSI noise in front of it.
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 
-[[ -n "$MANIFEST" ]] || die "usage: apply.sh <path-to-app.yaml> [--force]"
+[[ -n "$MANIFEST" ]] || die "usage: apply.sh <path-to-app.yaml> [--force] [--render] [--image REF]"
 [[ -f "$MANIFEST" ]] || die "no such manifest: $MANIFEST"
+
+# ------------------------------------------------------------------ render ---
+# The manifest is the shape of the deployment; image.tag is the deploy. Rendering
+# happens here rather than in the workflow so that `--render` reproduces exactly
+# what CI would PUT, and so a local `make deploy-nas` and CI cannot diverge.
+
+# Strip comments and blank lines; the first surviving line is the reference.
+read_image_tag() {
+    local file="$1"
+    [[ -f "$file" ]] || die "no image tag file: $file (expected beside the manifest)"
+    local ref
+    ref=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$file" | grep -m1 -v '^[[:space:]]*$') \
+        || die "$file contains no image reference (only comments?)"
+    printf '%s' "$ref"
+}
+
+if [[ -n "$IMAGE_REF" ]]; then
+    # Loud: the box now runs something git does not record, which is the exact
+    # property the whole split-manifest design exists to protect.
+    printf '\033[1;33mwarning:\033[0m --image overrides %s; the deployed state will not match git\n' \
+        "${IMAGE_TAG_FILE:-$(dirname "$MANIFEST")/image.tag}" >&2
+else
+    IMAGE_REF=$(read_image_tag "${IMAGE_TAG_FILE:-$(dirname "$MANIFEST")/image.tag}")
+fi
+
+# `|` as the delimiter: image references contain `/`.
+RENDERED=$(sed "s|@IMAGE@|${IMAGE_REF}|g" "$MANIFEST")
+
+# An unrendered placeholder would be PUT verbatim and leave the app CRASHED with
+# nothing pointing at the cause. Refuse instead.
+if printf '%s' "$RENDERED" | grep -q '@IMAGE@'; then
+    die "@IMAGE@ survived rendering -- substitution failed"
+fi
+# REPLACE_ME is the placeholder shipped in image.tag; it is never a real image.
+if [[ "$IMAGE_REF" == *REPLACE_ME* ]]; then
+    die "image reference is still the placeholder ($IMAGE_REF) -- set a real tag in image.tag"
+fi
+
+log "Image: $IMAGE_REF"
+
+if [[ "$RENDER_ONLY" == 1 ]]; then
+    printf '%s\n' "$RENDERED"
+    exit 0
+fi
+
 [[ -n "${TRUENAS_URL:-}" ]] || die "TRUENAS_URL is not set"
 [[ -n "${TRUENAS_API_KEY:-}" ]] || die "TRUENAS_API_KEY is not set"
 command -v jq >/dev/null || die "jq is required"
@@ -107,7 +180,7 @@ if ! printf '%s' "$current" | jq -e '.name?' >/dev/null 2>&1; then
 fi
 
 log "Applying $MANIFEST to $TRUENAS_APP"
-payload=$(jq -Rs '{custom_compose_config_string: .}' < "$MANIFEST")
+payload=$(printf '%s\n' "$RENDERED" | jq -Rs '{custom_compose_config_string: .}')
 response=$("${CURL[@]}" -X PUT "$APP_URL" "${AUTH[@]}" "${JSON[@]}" -d "$payload") \
     || die "PUT failed: $response"
 

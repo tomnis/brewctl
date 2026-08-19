@@ -1,8 +1,15 @@
 # Promote: apply deploy/nas/app.yaml to the TrueNAS custom app.
 #
-# Deploying is a deliberate act -- editing one line of the manifest and pushing.
+# Deploying is a deliberate act -- editing the one line in deploy/nas/image.tag
+# and pushing. app.yaml holds the shape of the deployment and changes rarely;
+# image.tag holds what is running and is the whole promotion.
 # That keeps git the record of what is running, and makes rollback `git revert`.
-# Building an image does not deploy it (see build.yml).
+# Building an image does not deploy it (see build.yml), and the two workflows do
+# not overlap: build.yml has a matching paths-ignore for deploy/**, so a
+# promotion commit (image.tag alone) runs only this one. If a commit ever changes
+# both code and deploy/**, both run -- and on a single-capacity runner they
+# serialize in unspecified order, so the manifest can be applied before its image
+# exists. Keep promotions as their own commit.
 #
 # All the logic lives in deploy/nas/apply.sh, not here: applying is one idempotent
 # PUT of one file, so switching from this CI trigger to a systemd timer on the NAS
@@ -25,6 +32,10 @@ on:
   push:
     branches: [master]
     paths:
+      # image.tag is the promotion: a deploy is a one-line change to that file
+      # and nothing else. app.yaml and apply.sh are here too because a change to
+      # the deployment's shape, or to how it is applied, also needs applying.
+      - 'deploy/nas/image.tag'
       - 'deploy/nas/app.yaml'
       - 'deploy/nas/apply.sh'
 

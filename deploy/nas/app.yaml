@@ -1,9 +1,13 @@
 # brewctl on TrueNAS -- the deployment manifest.
 #
-# This file IS the desired state. `PUT /api/v2.0/app/id/brewctl-api` takes a
-# custom app's entire compose config as `custom_compose_config_string`, so there
-# is nothing to template and no second source of truth: deploy/nas/apply.sh posts
-# this file verbatim. Rollback is `git revert` of the commit that bumped the tag.
+# This file plus deploy/nas/image.tag IS the desired state. `PUT
+# /api/v2.0/app/id/brewctl-api` takes a custom app's entire compose config as
+# `custom_compose_config_string`, so deploy/nas/apply.sh posts this file with
+# exactly one substitution made (@IMAGE@) and nothing else.
+#
+# This file is the *shape* of the deployment and changes rarely; image.tag is the
+# deploy and changes every time. Rollback is `git revert` of the commit that
+# bumped image.tag.
 #
 #   ./deploy/nas/apply.sh deploy/nas/app.yaml
 #
@@ -17,20 +21,23 @@
 # beside this file, so `${VAR}` would expand to empty and `${VAR:-default}` would
 # be worse -- it would silently mask a wrong Pi address instead of failing.
 # The consequence is that this file serves exactly one environment. That is fine.
+#
+# The single exception is `@IMAGE@`, which apply.sh substitutes from
+# deploy/nas/image.tag *before* the PUT, so what TrueNAS stores is still literal.
+# A distinct sigil rather than ${IMAGE} on purpose: it cannot be mistaken for
+# compose interpolation, and apply.sh refuses to apply a manifest where it
+# survives rendering.
 
 services:
   api:
-    # Pinned, never :latest. This is the only way to know what is running and the
-    # only way to roll back to an artifact that already exists. Bump this one line
-    # to deploy; CI loads tomas/brewctl:sha-<short> onto this host for every build.
+    # Rendered from deploy/nas/image.tag, which is where deploys happen and where
+    # the pinning rationale lives. Nothing to edit here to deploy.
     #
-    # There is no registry -- the tag is local to this host's Docker daemon, put
-    # there by `docker load` (see .forgejo/workflows/build.yml). The owner
-    # (Forgejo org) prefix is still carried so images from different repos on
-    # this daemon cannot collide. pull_policy: never so a typo'd tag fails
-    # immediately instead of hanging on a pull from Docker Hub that can never
-    # succeed.
-    image: tomas/brewctl:sha-REPLACE_ME
+    # pull_policy: never because there is no registry -- the tag is local to this
+    # host's Docker daemon, put there by `docker load` (see
+    # .forgejo/workflows/build.yml). Without it a typo'd tag hangs on a pull from
+    # Docker Hub that can never succeed, instead of failing immediately.
+    image: "@IMAGE@"
     pull_policy: never
     container_name: brewctl-api
     restart: unless-stopped

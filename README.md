@@ -248,24 +248,34 @@ journalctl -u brewctl-hardware | grep -iE 'production|mock'
 
 ### API + frontend (TrueNAS custom app)
 
-`deploy/nas/app.yaml` **is** the deployment manifest — `PUT /api/v2.0/app/id/{name}`
-takes a custom app's whole compose config as `custom_compose_config_string`, so
-`deploy/nas/apply.sh` posts the file verbatim. Nothing is templated, and there is
-no second source of truth.
+`PUT /api/v2.0/app/id/{name}` takes a custom app's whole compose config as
+`custom_compose_config_string`, so `deploy/nas/apply.sh` posts one file with one
+substitution made and nothing else:
+
+- `deploy/nas/app.yaml` — the *shape* of the deployment (ports, env, secrets,
+  healthcheck), with an `@IMAGE@` placeholder. Changes rarely.
+- `deploy/nas/image.tag` — the one pinned image reference. **This file is the deploy.**
 
 Publishing and promoting are separate:
 
 ```bash
 git tag v1.2.3 && git push forgejo v1.2.3    # CI tests, builds, publishes. Deploys nothing.
-# then edit the image tag in deploy/nas/app.yaml and push -- that is the deploy
+# then put the published reference in deploy/nas/image.tag and push -- that is the deploy
 ```
 
-Git therefore records what is running, and rollback is `git revert` of the tag
-bump. Apply by hand with:
+Git therefore records what is running, and rollback is `git revert` of the bump —
+which works only while that image is still loaded on the NAS, since there is no
+registry to re-pull from. Apply by hand with:
 
 ```bash
+./deploy/nas/apply.sh deploy/nas/app.yaml --render          # preview, no network
 TRUENAS_URL=https://<nas> TRUENAS_API_KEY=... make deploy-nas
 ```
+
+`apply.sh` refuses to apply an unrendered manifest or a placeholder tag. For an
+emergency rollback to an image already on the box, `--image REF` bypasses
+`image.tag` — the box is then running something git does not record, so follow it
+with a real commit.
 
 UI at `http://<nas>:8000/app`, API at `http://<nas>:8000/api`.
 

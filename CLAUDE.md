@@ -126,12 +126,20 @@ SSE/WS URLs too.
 
 **Building is not deploying.** `build.yml` runs tests, builds the root `Dockerfile`, smoke-tests the
 image (`/api/health` and `/app/`), and streams it onto the NAS with `docker save | ssh docker load`
-— there is no registry, so `deploy/nas/app.yaml` pins registry-less local tags
+— there is no registry, so the deployed reference is a registry-less local tag
 (`tomas/brewctl:sha-<short12>`). Every branch publishes an image; it just sits on the daemon.
-`deploy.yml` runs only on master pushes that touch `deploy/nas/app.yaml` or `apply.sh`, and applies
-the manifest via the TrueNAS API. So **deploying is a one-line commit bumping the image tag**, and
-rollback is `git revert` (valid while the old image is still loaded). `apply.sh` refuses to redeploy
-while a brew is active, and fails open if the api is unreachable.
+
+The manifest is split in two: `deploy/nas/app.yaml` is the *shape* of the deployment and carries an
+`@IMAGE@` placeholder, while `deploy/nas/image.tag` holds the one pinned reference and is the whole
+promotion. `apply.sh` substitutes one into the other before the PUT and refuses to apply if `@IMAGE@`
+survives or the tag is still `REPLACE_ME`; `--render` prints the result without touching the network,
+and `--image REF` overrides the file for an emergency rollback (leaving the box diverged from git).
+
+`deploy.yml` runs only on master pushes touching `deploy/nas/{image.tag,app.yaml,apply.sh}`;
+`build.yml` has a matching `paths-ignore: deploy/**`, so a promotion does not also rebuild. So
+**deploying is a one-line commit to `image.tag`**, and rollback is `git revert` (valid while the old
+image is still loaded). `apply.sh` refuses to redeploy while a brew is active, and fails open if the
+api is unreachable.
 
 Forgejo is the CI origin — push directly to the `forgejo` remote; a pull mirror from GitHub would
 not trigger runs.

@@ -1,14 +1,14 @@
 # Test, build, smoke-test, and publish the api image.
 #
 # There is no registry. The image is streamed straight onto the deploy host with
-# `docker save | ssh docker load`, so image references in deploy/nas/app.yaml are
-# registry-less local tags (`tomas/brewctl:sha-...`, org prefix kept so images
+# `docker save | ssh docker load`, so the reference in deploy/nas/image.tag is a
+# registry-less local tag (`tomas/brewctl:sha-...`, org prefix kept so images
 # from different repos on that daemon cannot collide) and the NAS must never be
-# asked to pull them -- app.yaml pins an exact tag for that reason.
+# asked to pull it -- image.tag pins an exact tag for that reason.
 #
 # Publishing is not deploying. This workflow only puts the image on the box;
-# promotion is a separate, deliberate commit that bumps the tag in
-# deploy/nas/app.yaml (see deploy.yml). That keeps git the record of what is
+# promotion is a separate, deliberate commit that bumps the one line in
+# deploy/nas/image.tag (see deploy.yml). That keeps git the record of what is
 # running and makes rollback a `git revert` -- valid as long as the older image
 # is still loaded on the NAS (see the prune step below).
 #
@@ -29,12 +29,23 @@ name: Build and publish
 # Every branch builds and publishes. That is safe because publishing is not
 # deploying: a branch image just sits in the NAS daemon until someone pins it,
 # and having it there is what makes testing a branch on the real box a one-line
-# manifest edit rather than a build. The branch name is in the tag so those
+# image.tag edit rather than a build. The branch name is in the tag so those
 # images are identifiable, and only master/tag builds get the `bN` alias.
+#
+# paths-ignore keeps this off the deploy commit. A promotion is one line in
+# deploy/nas/image.tag, so rebuilding there is worse than wasteful: it would
+# publish a sha- tag for a commit whose image.tag pins the *previous* commit's
+# image, and race deploy.yml for the single-capacity runner on every deploy.
+# Anything that can change the image (Dockerfile, backend/, frontend/) is outside
+# these paths, so a commit touching both still builds.
 on:
   push:
     branches: ['**']
     tags: ['v*']
+    paths-ignore:
+      - 'deploy/**'
+      - '**.md'
+      - '.gitignore'
   workflow_dispatch:
     inputs:
       tag:
@@ -125,7 +136,7 @@ jobs:
       - name: Determine tags
         id: tag
         run: |
-          # sha- is the tag app.yaml pins: stable across re-runs and traceable
+          # sha- is the tag image.tag pins: stable across re-runs and traceable
           # back to a commit, and the one tag every build gets.
           sha="sha-${GITHUB_SHA::12}"
           tags="$sha"
@@ -279,5 +290,8 @@ jobs:
             echo '```'
             for t in ${{ steps.tag.outputs.tags }}; do echo "${{ steps.tag.outputs.repo }}:$t"; done
             echo '```'
-            echo "To deploy: set the image in deploy/nas/app.yaml to \`${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}\` and push."
+            echo "To deploy: put this line in deploy/nas/image.tag and push:"
+            echo '```'
+            echo "${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}"
+            echo '```'
           } >> $GITHUB_STEP_SUMMARY
