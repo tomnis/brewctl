@@ -1,12 +1,12 @@
-# Test, build, smoke-test, and ship the api image to the NAS.
+# Test, build, smoke-test, and publish the api image.
 #
 # There is no registry. The image is streamed straight onto the deploy host with
 # `docker save | ssh docker load`, so image references in deploy/nas/app.yaml are
 # registry-less local tags (`tomas/brewctl:sha-...`, org prefix kept so images
-# from different repos on that daemon cannot collide) and the NAS must never be asked to
-# pull them -- app.yaml pins an exact tag for that reason.
+# from different repos on that daemon cannot collide) and the NAS must never be
+# asked to pull them -- app.yaml pins an exact tag for that reason.
 #
-# Shipping is not deploying. This workflow only puts the image on the box;
+# Publishing is not deploying. This workflow only puts the image on the box;
 # promotion is a separate, deliberate commit that bumps the tag in
 # deploy/nas/app.yaml (see deploy.yml). That keeps git the record of what is
 # running and makes rollback a `git revert` -- valid as long as the older image
@@ -24,10 +24,10 @@
 #
 # The runner needs a Docker daemon (DinD or a mounted socket).
 
-name: Build and ship
+name: Build and publish
 
-# Every branch builds and ships. That is safe because shipping is not deploying:
-# a branch image just sits in the NAS daemon until someone pins it in app.yaml,
+# Every branch builds and publishes. That is safe because publishing is not
+# deploying: a branch image just sits in the NAS daemon until someone pins it,
 # and having it there is what makes testing a branch on the real box a one-line
 # manifest edit rather than a build. The branch name is in the tag so those
 # images are identifiable, and only master/tag builds get the `bN` alias.
@@ -38,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Extra image tag to build and ship
+        description: Extra image tag to build and publish
         required: false
         default: ''
 
@@ -53,11 +53,11 @@ env:
   # a one-line change here rather than an edit to every docker invocation.
   IMAGE: ""
   # Empty: images are loaded straight onto the deploy target, not pulled.
-  # Set to "forgejo.catacombs.local/" -- with trailing slash -- if a registry lands.
+  # Set to "example.registry/" -- with trailing slash -- if a registry lands.
   REGISTRY: ""
   DEPLOY_USER: ${{ vars.DEPLOY_USER }}
   DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-  # How many brewctl images to keep on the NAS after a ship. Rollback by
+  # How many brewctl images to keep on the NAS after a publish. Rollback by
   # `git revert` only works while the previous image is still there.
   KEEP_IMAGES: 10
 
@@ -110,16 +110,12 @@ jobs:
             echo "::warning::hardware contract changed -- run 'make deploy-pi' or brews will be refused"
           fi
 
-  ship:
-    # dind, not docker: the `docker` label's image has no docker CLI or daemon
-    # ("docker: command not found"). Everything below builds, runs, and saves
-    # images, so it needs the daemon; the test job does not and stays on docker.
+  publish:
     runs-on: dind
     needs: test
     steps:
       - uses: actions/checkout@v4
 
-      # The dind image is minimal and ssh is how the image leaves this box.
       - name: Ensure ssh client
         run: |
           command -v ssh >/dev/null && exit 0
@@ -244,7 +240,7 @@ jobs:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
-      - name: Ship image to the NAS
+      - name: Publish image
         run: |
           args=""
           for t in ${{ steps.tag.outputs.tags }}; do
@@ -256,12 +252,12 @@ jobs:
             | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
                   "${DEPLOY_USER}@${DEPLOY_HOST}" 'gunzip | docker load'
 
-      # Old images accumulate on a box with a finite pool, and every branch ships
+      # Old images accumulate on a box with a finite pool, and every branch publishes
       # here, so this is load-bearing rather than tidiness. Keep the newest
       # KEEP_IMAGES so a revert still has something to roll back to.
       #
       # The image the NAS is actually running can fall out of that window if
-      # enough branches ship. `docker rmi` refuses to remove an in-use image, so
+      # enough branches publish. `docker rmi` refuses to remove an in-use image, so
       # the running app is never broken by this -- the failure is swallowed.
       #- name: Prune old images on the NAS
       #  run: |

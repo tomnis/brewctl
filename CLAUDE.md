@@ -127,7 +127,7 @@ SSE/WS URLs too.
 **Building is not deploying.** `build.yml` runs tests, builds the root `Dockerfile`, smoke-tests the
 image (`/api/health` and `/app/`), and streams it onto the NAS with `docker save | ssh docker load`
 — there is no registry, so `deploy/nas/app.yaml` pins registry-less local tags
-(`tomas/brewctl:sha-<short12>`). Every branch ships an image; it just sits on the daemon.
+(`tomas/brewctl:sha-<short12>`). Every branch publishes an image; it just sits on the daemon.
 `deploy.yml` runs only on master pushes that touch `deploy/nas/app.yaml` or `apply.sh`, and applies
 the manifest via the TrueNAS API. So **deploying is a one-line commit bumping the image tag**, and
 rollback is `git revert` (valid while the old image is still loaded). `apply.sh` refuses to redeploy
