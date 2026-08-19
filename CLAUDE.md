@@ -143,6 +143,10 @@ SSE/WS URLs too.
   values are read at import time, so env changes require a process restart, and tests that need
   different config must patch the module attribute.
 - `api/config.py` appends `-dev` to `BREWCTL_INFLUXDB_BUCKET` unless `BREWCTL_IS_PROD=true`.
+- `BREWCTL_HARDWARE_URL` **raises** at import when `BREWCTL_IS_PROD=true` and it is unset or blank;
+  off-prod it falls back to `http://localhost:8001` so tests and `fastapi dev` need no environment.
+  `api/server.py` builds `HttpScale`/`HttpValve` at import time, so a `None` there used to surface as
+  `AttributeError: 'NoneType' object has no attribute 'rstrip'`. Covered by `tests/api/test_config.py`.
 - Hardware device deps (`bluepy`, `RPi.GPIO`, Adafruit MotorKit) are in `requirements/hardware.txt`
   and install only on the Pi — production hardware imports are done lazily inside
   `create_scale()`/`create_valve()` to keep dev machines working.

@@ -75,5 +75,26 @@ BREWCTL_QUALITY_SCORING_WINDOW = int(
 )  # seconds
 
 # Hardware server URL (constructed from host and port)
-BREWCTL_HARDWARE_URL = os.environ.get("BREWCTL_HARDWARE_URL")
+#
+# Required in prod. Fail loudly at startup rather than letting the None reach
+# HttpScale/HttpValve, which are constructed at import time in api/server.py and
+# die with `AttributeError: 'NoneType' object has no attribute 'rstrip'` sixty
+# lines into a traceback -- a message that says nothing about the missing
+# variable. Same reasoning as the InfluxDB token check above.
+#
+# Off-prod it falls back to the dev default instead of raising: the test suite
+# imports this module without any environment, and the compose files set the
+# variable explicitly anyway.
+BREWCTL_HARDWARE_DEFAULT_URL = "http://localhost:8001"
+BREWCTL_HARDWARE_URL = os.environ.get("BREWCTL_HARDWARE_URL", "").strip()
+if not BREWCTL_HARDWARE_URL:
+    if os.environ.get("BREWCTL_IS_PROD", "false") == "true":
+        raise ValueError(
+            "BREWCTL_IS_PROD is true but BREWCTL_HARDWARE_URL is not set. "
+            "Set it to the hardware service, e.g. http://coldbrewer.local:8000"
+        )
+    BREWCTL_HARDWARE_URL = BREWCTL_HARDWARE_DEFAULT_URL
+    logger.warning(
+        f"BREWCTL_HARDWARE_URL not set - defaulting to {BREWCTL_HARDWARE_URL}"
+    )
 logger.info(f"BREWCTL_HARDWARE_URL = {BREWCTL_HARDWARE_URL}")

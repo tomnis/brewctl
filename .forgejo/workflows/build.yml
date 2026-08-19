@@ -171,9 +171,18 @@ jobs:
           docker rm -f brewctl-smoke 2>/dev/null || true
           # No hardware and no InfluxDB here: the api starts anyway and reports
           # "degraded", which is enough to prove the image boots and serves.
+          #
+          # BREWCTL_HARDWARE_URL must still be *set* though -- it has no default,
+          # and api/server.py builds HttpScale at import time, so an unset value
+          # crashes the process on startup with
+          # `AttributeError: 'NoneType' object has no attribute 'rstrip'`.
+          # Port 9 (discard) is a valid URL that is reliably dead: the SSE
+          # listener runs on a background thread and just fails to connect,
+          # which is exactly the degraded state being tested.
           docker run -d --name brewctl-smoke \
             -e BREWCTL_MODE=api \
             -e BREWCTL_IS_PROD=false \
+            -e BREWCTL_HARDWARE_URL=http://127.0.0.1:9 \
             "${IMAGE}:${{ steps.tag.outputs.primary }}"
 
           # The container is a sibling of this job (shared daemon), so probe from
