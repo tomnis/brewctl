@@ -240,14 +240,14 @@ jobs:
       # The image the NAS is actually running can fall out of that window if
       # enough branches ship. `docker rmi` refuses to remove an in-use image, so
       # the running app is never broken by this -- the failure is swallowed.
-      - name: Prune old images on the NAS
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
-              "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "docker images '${IMAGE}' --format '{{.ID}}' \
-                 | awk '!seen[\$0]++' \
-                 | tail -n +$((KEEP_IMAGES + 1)) \
-                 | xargs -r docker rmi || true"
+      #- name: Prune old images on the NAS
+      #  run: |
+      #    ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+      #        "${DEPLOY_USER}@${DEPLOY_HOST}" \
+      #        "docker images '${IMAGE}' --format '{{.ID}}' \
+      #           | awk '!seen[\$0]++' \
+      #           | tail -n +$((KEEP_IMAGES + 1)) \
+      #           | xargs -r docker rmi || true"
 
       - name: Clean up key
         if: always()
