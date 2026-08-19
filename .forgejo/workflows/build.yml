@@ -25,9 +25,14 @@
 
 name: Build and ship
 
+# Every branch builds and ships. That is safe because shipping is not deploying:
+# a branch image just sits in the NAS daemon until someone pins it in app.yaml,
+# and having it there is what makes testing a branch on the real box a one-line
+# manifest edit rather than a build. The branch name is in the tag so those
+# images are identifiable, and only master/tag builds get the `bN` alias.
 on:
   push:
-    branches: [master]
+    branches: ['**']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -42,7 +47,7 @@ env:
   DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
   # How many brewctl images to keep on the NAS after a ship. Rollback by
   # `git revert` only works while the previous image is still there.
-  KEEP_IMAGES: 5
+  KEEP_IMAGES: 10
 
 jobs:
   test:
@@ -84,14 +89,26 @@ jobs:
         id: tag
         run: |
           # sha- is the tag app.yaml pins: stable across re-runs and traceable
-          # back to a commit. The build number is a convenience alias for humans.
+          # back to a commit, and the one tag every build gets.
           sha="sha-${GITHUB_SHA::12}"
-          build="b${{ github.run_number }}"
-          tags="$sha $build"
-          # Tag pushes also get the tag name, which is what a release is
-          # referred to by.
+          tags="$sha"
+
           case "$GITHUB_REF" in
-            refs/tags/*) tags="$tags ${GITHUB_REF#refs/tags/}" ;;
+            # A release is referred to by its tag name.
+            refs/tags/*)
+              tags="$tags ${GITHUB_REF#refs/tags/} b${{ github.run_number }}" ;;
+            refs/heads/master)
+              # bN is the monotonic build number humans deploy by. Only master
+              # gets it -- a shared counter across branches would make `b41` mean
+              # nothing about what is in it.
+              tags="$tags b${{ github.run_number }}" ;;
+            *)
+              # Branch builds get a moving branch tag, so "whatever is latest on
+              # that branch" is pinnable without looking up a sha. Slugged:
+              # Docker tags allow only [A-Za-z0-9_.-], and slashes in branch
+              # names would otherwise read as registry path separators.
+              slug=$(printf '%s' "${GITHUB_REF#refs/heads/}" | tr -c 'A-Za-z0-9_.-' '-')
+              tags="$tags branch-${slug}" ;;
           esac
           [ -n "${{ inputs.tag }}" ] && tags="$tags ${{ inputs.tag }}"
           {
@@ -178,8 +195,13 @@ jobs:
             | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
                   "${DEPLOY_USER}@${DEPLOY_HOST}" 'gunzip | docker load'
 
-      # Untagged/old images accumulate on a box with a finite pool. Keep the
-      # newest KEEP_IMAGES so a revert still has something to roll back to.
+      # Old images accumulate on a box with a finite pool, and every branch ships
+      # here, so this is load-bearing rather than tidiness. Keep the newest
+      # KEEP_IMAGES so a revert still has something to roll back to.
+      #
+      # The image the NAS is actually running can fall out of that window if
+      # enough branches ship. `docker rmi` refuses to remove an in-use image, so
+      # the running app is never broken by this -- the failure is swallowed.
       - name: Prune old images on the NAS
         run: |
           ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
