@@ -10,16 +10,19 @@ make prod-local       # the production image + mock hardware; UI at :8000/app
 make test             # backend + frontend
 make testBackend      # cd backend && pytest tests
 make testFrontend     # cd frontend && npm run test:run
+make lint             # cd frontend && npm run lint (no backend linter is wired up)
+make build-prod-image # docker build -t brewctl-api:local .
 make deploy-pi        # git push coldbrewer <branch> — the ONLY way the Pi updates
-make deploy-nas       # apply deploy/nas/app.yaml to the TrueNAS custom app
+make deploy-nas       # deploy/nas/apply.sh applies deploy/nas/app.yaml to TrueNAS
 ```
 
 Single test / focused runs:
 
 ```bash
 cd backend && pytest tests/api/test_server.py::test_name     # pytest.ini sets pythonpath=src, testpaths=tests
+cd backend && pytest tests/hardware -k watchdog
 cd frontend && npx vitest run src/components/brew/validators.test.ts
-cd frontend && npm run lint && npm run build                 # eslint; build is tsc -b + vite build
+cd frontend && npm run build                                 # tsc -b + vite build
 ```
 
 Running a service outside Docker (from `backend/`, with `PYTHONPATH=src`):
@@ -46,12 +49,13 @@ and deliberately excludes `hardware.txt`, whose `bluepy`/`RPi.GPIO` will not bui
 
 - **`brewctl/core/`** — shared across both modes: `model.py` (Pydantic/enums: `BrewState`,
   `ValveCommand`, `BrewStrategyType`, `Brew`, `BrewStatus`), `config.py` (shared env vars),
-  `scale.py` / `valve.py` (`AbstractScale`, `AbstractValve` + `MockScale`, `MockValve`), `log.py`.
+  `scale.py` / `valve.py` (`AbstractScale`, `AbstractValve` + `MockScale`, `MockValve`),
+  `contract.py` (api↔hardware wire version), `secrets.py`, `log.py`.
 - **`brewctl/hardware/`** — runs on the Pi, owns the physical devices. `create_scale()` /
   `create_valve()` pick `LunarScale`/`MotorKitValve` when `BREWCTL_IS_PROD=true`, mocks otherwise.
-  Exposes `/api/valve/*`, `/api/scale/*` and SSE streams `/sse/valve/status`, `/sse/scale/status`.
-  Has a watchdog (deadman switch) with a **two-tier derived timeout** — see
-  `effective_watchdog_timeout()`:
+  Exposes `/api/valve/*`, `/api/scale/*`, `/health` (no `/api` prefix here, unlike the api service)
+  and SSE streams `/sse/valve/status`, `/sse/scale/status`. Has a watchdog (deadman switch) with a
+  **two-tier derived timeout** — see `effective_watchdog_timeout()`:
 
   ```
   effective = WATCHDOG_TIMEOUT_SECONDS   (10s)  if a heartbeat arrived within BACKSTOP
@@ -84,9 +88,9 @@ terminates them — setting `cur_brew = None` or a new id ends the loop):
 - `collect_scale_data_task` — every `scale_interval` (0.5s): read scale → `time_series.write_scale_data()`
   and `weight_buffer.add_reading()`.
 - `brew_step_task` — computes flow rate from the in-process `WeightBuffer` when it `is_ready()` and
-  not `is_stale()`, otherwise falls back to InfluxDB derivative queries; calls `strategy.step()` and
-  applies the returned `ValveCommand` + sleep interval. `STOP` completes the brew, returns the valve
-  to start, and releases it.
+  not `is_stale()` (2s), otherwise falls back to InfluxDB derivative queries; calls `strategy.step()`
+  and applies the returned `ValveCommand` + sleep interval. `STOP` completes the brew, returns the
+  valve to start, and releases it.
 
 State is global mutable module state, not a session store — one brew at a time. Tests reset it via
 the `client`/`reset_globals` fixtures in `backend/tests/api/conftest.py`.
@@ -94,22 +98,43 @@ the `client`/`reset_globals` fixtures in `backend/tests/api/conftest.py`.
 ### Strategies
 
 `AbstractBrewStrategy.step(flow_rate, current_weight) -> (ValveCommand, interval_seconds)`. Concrete
-strategies live in `api/strategies/` and self-register into `BREW_STRATEGY_REGISTRY` via the
-`@register_strategy(BrewStrategyType.X)` decorator; `create_brew_strategy()` builds them through
-`from_params(strategy_params, base_params)`. `api/brew_strategy.py` is a re-export shim — importing
-it is what triggers registration of every strategy, so import from there rather than the submodules.
+strategies live in `api/strategies/` (one class per file, `PascalCase.py`) and self-register into
+`BREW_STRATEGY_REGISTRY` via the `@register_strategy(BrewStrategyType.X)` decorator;
+`create_brew_strategy()` builds them through `from_params(strategy_params, base_params)`. The
+registry and base class themselves live in `strategies/DefaultBrewStrategy.py`.
+`api/brew_strategy.py` is a re-export shim — importing it is what triggers registration of every
+strategy, so import from there rather than from the submodules.
 
-Adding a strategy requires three coordinated edits: the `BrewStrategyType` enum in `core/model.py`,
-the new class + `register_strategy` + re-export in `api/brew_strategy.py`, and the `STRATEGIES` array
-in `frontend/src/components/brew/constants.ts` (its `StrategyType` union must match the enum values).
+Adding a strategy touches four places, all of which must agree:
+
+1. `BrewStrategyType` in `core/model.py` (the enum *value* is the wire id).
+2. The new class file in `api/strategies/` with `@register_strategy(...)`.
+3. `api/strategies/__init__.py` **and** `api/brew_strategy.py` re-exports.
+4. The `STRATEGIES` array in `frontend/src/components/brew/constants.ts`, whose `StrategyType`
+   union must match the enum values; each `params` entry becomes a form field posted as
+   `strategy_params`.
 
 ### Frontend
 
-React 18 + Chakra UI + Vite. Real-time updates come from SSE (`useBrewStatus` subscribes to
-`/sse/brew/status`, `useConnectionStatus` to `/sse/health`); WebSocket endpoints (`/ws/brew/status`,
-`/ws/health`) still exist on the backend as an older path. URLs are derived in
+React 18 + Chakra UI v3 + Vite + Recharts. Real-time updates come from SSE (`useBrewStatus`
+subscribes to `/sse/brew/status`, `useConnectionStatus` to `/sse/health`); WebSocket endpoints
+(`/ws/brew/status`, `/ws/health`) still exist on the backend as an older path. URLs are derived in
 `components/brew/constants.ts` by string-rewriting the API URL — changing the API base path affects
 SSE/WS URLs too.
+
+### CI/CD (Forgejo, `.forgejo/workflows/`)
+
+**Building is not deploying.** `build.yml` runs tests, builds the root `Dockerfile`, smoke-tests the
+image (`/api/health` and `/app/`), and streams it onto the NAS with `docker save | ssh docker load`
+— there is no registry, so `deploy/nas/app.yaml` pins registry-less local tags
+(`tomas/brewctl:sha-<short12>`). Every branch ships an image; it just sits on the daemon.
+`deploy.yml` runs only on master pushes that touch `deploy/nas/app.yaml` or `apply.sh`, and applies
+the manifest via the TrueNAS API. So **deploying is a one-line commit bumping the image tag**, and
+rollback is `git revert` (valid while the old image is still loaded). `apply.sh` refuses to redeploy
+while a brew is active, and fails open if the api is unreachable.
+
+Forgejo is the CI origin — push directly to the `forgejo` remote; a pull mirror from GitHub would
+not trigger runs.
 
 ## Gotchas
 
@@ -118,11 +143,12 @@ SSE/WS URLs too.
   `/health` reports healthy, and no physical device moves. After any config change on the Pi, check
   `journalctl -u brewctl-hardware | grep -iE 'production|mock'`.
 - **The Pi never self-updates.** It changes only when someone runs `make deploy-pi` (a push to the
-  `coldbrewer` remote, whose `post-receive` hook reinstalls deps and restarts the unit). The NAS
-  deploys automatically, so the Pi can lag indefinitely. `core/contract.py`'s `HARDWARE_API_VERSION`
-  is what catches it: the api refuses to *start a brew* against an older Pi (409 with
+  `coldbrewer` remote, whose `post-receive` hook runs `deploy/pi/install.sh --deps-only` and restarts
+  the unit; unit/env/sudoers changes need a full `install.sh` run on the Pi). The NAS deploys
+  automatically, so the Pi can lag indefinitely. `core/contract.py`'s `HARDWARE_API_VERSION` is what
+  catches it: the api refuses to *start a brew* against an older Pi (409 with
   `detail.code == "hardware_version_mismatch"`) while still serving the UI. Bump that version for any
-  api↔hardware contract change.
+  api↔hardware contract change — CI emits a warning when `contract.py` changes.
 - **Never write `cur_brew.status = BrewState.BREWING` unconditionally** in the background tasks. Both
   loops did, which silently un-paused a paused brew and resumed driving the valve — the scale loop
   runs while `PAUSED`, and the step loop has awaits during which a pause can land. Only recover from
@@ -131,7 +157,8 @@ SSE/WS URLs too.
   container healthchecks must probe `/api/health`. Probing `/` is a permanent 404.
 - Secrets support `<VAR>_FILE` indirection via `core/secrets.py` (used for `BREWCTL_INFLUXDB_TOKEN`).
   It **raises** when the file is set but unreadable rather than falling back to an empty value, which
-  would otherwise surface as an opaque InfluxDB 401 hours into a brew.
+  would otherwise surface as an opaque InfluxDB 401 hours into a brew. `api/config.py` also raises at
+  import if `BREWCTL_IS_PROD=true` with no token.
 - **Vite `envPrefix` is `BREWCTL_FRONTEND_`, not `BREWCTL_`** — anything matching the prefix in the
   build environment is inlined into the client bundle, and `BREWCTL_INFLUXDB_TOKEN` shares the
   `BREWCTL_` namespace. Never widen it. Only `BREWCTL_FRONTEND_API_URL` and
@@ -154,3 +181,6 @@ SSE/WS URLs too.
   instantiates them at import time. A test module with a top-level `import brewctl.api.server` binds
   the real classes and breaks ~12 unrelated tests with 503s — import the module inside a fixture that
   depends on `client`.
+- Tests are split `tests/core`, `tests/api`, `tests/hardware`, each with its own `conftest.py`
+  (`client` for the api app, `hardware_client` for the hardware app). README's "Testing Guidelines"
+  section still lists the pre-split flat filenames (e.g. `test_brew_api.py`) and is stale there.
