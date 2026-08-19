@@ -246,17 +246,48 @@ journalctl -u brewctl-hardware | grep -iE 'production|mock'
 # want: "Initializing production [ac lunar] scale" / "Initializing production valve"
 ```
 
-### API + frontend (TrueNAS, Docker)
+### API + frontend (TrueNAS custom app)
+
+`deploy/nas/app.yaml` **is** the deployment manifest — `PUT /api/v2.0/app/id/{name}`
+takes a custom app's whole compose config as `custom_compose_config_string`, so
+`deploy/nas/apply.sh` posts the file verbatim. Nothing is templated, and there is
+no second source of truth.
+
+Publishing and promoting are separate:
 
 ```bash
-cp deploy/nas/.env.example deploy/nas/.env   # set the Influx token and the Pi's IP
-docker compose -f deploy/nas/docker-compose.yml up -d --build
+git tag v1.2.3 && git push forgejo v1.2.3    # CI tests, builds, publishes. Deploys nothing.
+# then edit the image tag in deploy/nas/app.yaml and push -- that is the deploy
+```
+
+Git therefore records what is running, and rollback is `git revert` of the tag
+bump. Apply by hand with:
+
+```bash
+TRUENAS_URL=https://<nas> TRUENAS_API_KEY=... make deploy-nas
 ```
 
 UI at `http://<nas>:8000/app`, API at `http://<nas>:8000/api`.
 
+One-time bootstrap, in order:
+
+1. Create the app once in the **Custom App** UI — `PUT` is update, not create.
+2. Put the InfluxDB token at the `secrets:` path in `app.yaml` (`root:root 0400`).
+   The api reads it via `BREWCTL_INFLUXDB_TOKEN_FILE` and refuses to start without
+   it, so it never appears in the manifest or in `docker inspect`.
+3. Run `deploy/nas/post-init.py` and register it as a TrueNAS **Post Init** script.
+   The Forgejo registry is HTTP-only, so Docker needs it in `insecure-registries`,
+   and an upgrade can rewrite `daemon.json`. It restarts the Docker daemon, which
+   stops every container on the box — maintenance window, not mid-brew.
+
 Address the Pi by **IP**, not `coldbrewer.local` — mDNS does not resolve inside a
 container. Give the Pi a DHCP reservation.
+
+`apply.sh` refuses to deploy while a brew is `brewing`, `paused`, or `error` (all
+three still drive the valve), since a redeploy restarts the api and destroys the
+in-process brew. It fails *open* if the api is refusing connections — otherwise a
+crashlooping api could never be fixed — but fails *closed* on a timeout, because a
+slow api is a running api. `--force` overrides.
 
 ---
 
@@ -315,18 +346,36 @@ Values are read at import time, so changes require a process restart.
 |----------|---------|-------------|
 | `BREWCTL_SCALE_MAC_ADDRESS` | - | Bluetooth MAC of the Lunar scale |
 | `BREWCTL_VALVE_MOTOR_NUMBER` | `1` | MotorKit stepper driving the valve (1 or 2) |
-| `BREWCTL_WATCHDOG_TIMEOUT_SECONDS` | `10.0` | Deadman switch: close the valve if no valve command or heartbeat arrives in this long |
+| `BREWCTL_WATCHDOG_TIMEOUT_SECONDS` | `10.0` | Deadman switch, fast tier: used while heartbeats are arriving |
+| `BREWCTL_WATCHDOG_BACKSTOP_SECONDS` | `300.0` | Deadman switch, slow tier: used when no heartbeat has been seen recently. Must exceed `BREWCTL_VALVE_INTERVAL_SECONDS` with margin |
 
-**API service only** (the NAS — `deploy/nas/.env`)
+The watchdog closes the valve if nothing feeds it within the *effective* timeout:
+
+```
+effective = BREWCTL_WATCHDOG_TIMEOUT_SECONDS   if a heartbeat arrived within the backstop
+            BREWCTL_WATCHDOG_BACKSTOP_SECONDS  otherwise
+```
+
+Two tiers because the api can be older than the Pi. An api without heartbeats only
+contacts the hardware when it moves the valve — up to `BREWCTL_VALVE_INTERVAL_SECONDS`
+apart — so holding it to the 10s timer would close the valve ~10s into every brew.
+The timeout is derived rather than stored as an armed flag, so the valve is never
+unguarded and a rollback decays back to the slow tier on its own.
+
+**API service only** (the NAS — `deploy/nas/app.yaml`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BREWCTL_HARDWARE_URL` | - | The Pi's address, e.g. `http://192.168.0.224:8000`. Use an IP, not mDNS |
 | `BREWCTL_INFLUXDB_URL` | - | InfluxDB URL. Unset disables time series |
-| `BREWCTL_INFLUXDB_TOKEN` | - | InfluxDB auth token |
+| `BREWCTL_INFLUXDB_TOKEN` | - | InfluxDB auth token. Prefer the `_FILE` form below |
+| `BREWCTL_INFLUXDB_TOKEN_FILE` | - | Path to a file holding the token, e.g. `/run/secrets/influxdb_token`. Takes precedence, and **raises at startup** if set but unreadable rather than silently using an empty token |
 | `BREWCTL_INFLUXDB_ORG` | - | InfluxDB organization |
 | `BREWCTL_INFLUXDB_BUCKET` | `coldbrew` | Bucket name. `-dev` is appended unless `BREWCTL_IS_PROD=true` |
-| `BREWCTL_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins. Only matters when the UI is not served by the api |
+| `BREWCTL_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins. Set it to empty in production — the api serves the UI same-origin, so the dev default would otherwise be added to production origins |
+
+Any `BREWCTL_*` variable can be supplied as `<VAR>_FILE` pointing at a file; see
+`backend/src/brewctl/core/secrets.py`.
 
 **Frontend** (build time)
 

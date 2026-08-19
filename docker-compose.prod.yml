@@ -1,0 +1,51 @@
+# Runs the *production* artifact locally: the same image CI publishes and TrueNAS
+# runs, with the frontend bundled and served by the api at /app.
+#
+#   make prod-local
+#
+# The default docker-compose.yml is for iterating on code -- it runs a vite dev
+# server against bind-mounted sources and never exercises this image. Use this one
+# to check what actually ships.
+#
+# A mock hardware service stands in for the Pi, so nothing here touches real
+# hardware. It reports the current contract version, so the api's version
+# handshake is satisfied and brews can start.
+
+services:
+  hardware:
+    build: ./backend
+    environment:
+      - BREWCTL_MODE=hardware
+      - BREWCTL_IS_PROD=false          # MockScale / MockValve
+    ports:
+      - "8001:8000"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - BREWCTL_MODE=api
+      # Deliberately NOT prod: prod requires a real InfluxDB token, and this stack
+      # is for checking the artifact, not the data path. Set BREWCTL_IS_PROD=true
+      # plus a token file to exercise the secret plumbing.
+      - BREWCTL_IS_PROD=false
+      - BREWCTL_HARDWARE_URL=http://hardware:8000
+      - BREWCTL_INFLUXDB_URL=${BREWCTL_INFLUXDB_URL:-}
+      - BREWCTL_INFLUXDB_ORG=${BREWCTL_INFLUXDB_ORG:-}
+      - BREWCTL_INFLUXDB_TOKEN=${BREWCTL_INFLUXDB_TOKEN:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - hardware
+    healthcheck:
+      # /api/health, NOT "/" -- the api serves no root route (only /api/*, /sse/*,
+      # /ws/* and the /app/{path} catchall), so probing "/" is a permanent 404 and
+      # the container would never report healthy.
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

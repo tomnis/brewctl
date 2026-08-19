@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from brewctl.core.log import logger
+from brewctl.core.contract import HARDWARE_API_VERSION
 from brewctl.core.valve import AbstractValve
 from brewctl.core.scale import AbstractScale
 from brewctl.core.config import *
@@ -58,13 +59,29 @@ NUDGE_MIN_INTERVAL_SECONDS = 2.0
 _nudge_last_call_time = 0.0
 _nudge_lock = threading.Lock()
 
-# Deadman switch: if the valve is off its start position and no valve command or
-# heartbeat arrives for this long, close it. Only the endpoints that touch the
-# valve (and the explicit heartbeat) feed this timer -- unrelated traffic such as
-# /health or SSE subscriptions must not keep an open valve alive.
+# Deadman switch: if the valve is off its start position and nothing has fed the
+# timer for long enough, close it. Only the endpoints that touch the valve (and
+# the explicit heartbeat) feed it -- unrelated traffic such as /health or SSE
+# subscriptions must not keep an open valve alive.
+#
+# The timeout is *derived*, not a stored armed/disarmed flag, because the api that
+# talks to us may be older than this code. An api from before the heartbeat
+# existed only contacts us when it moves the valve, which can be as rare as
+# BREWCTL_VALVE_INTERVAL_SECONDS (default 90) apart; holding it to the 10s timer
+# would close the valve ~10s into every brew.
+#
+#     effective = WATCHDOG_TIMEOUT_SECONDS   if a heartbeat arrived within BACKSTOP
+#                 WATCHDOG_BACKSTOP_SECONDS  otherwise
+#
+# So: a current api gets tight protection, an old api is not sabotaged, a rollback
+# decays back to the backstop on its own, and the valve is *never* unguarded --
+# which ruled out the alternative of arming only after the first heartbeat, since
+# a valve nudged open from the UI never produces one.
 WATCHDOG_TIMEOUT_SECONDS = float(os.getenv("BREWCTL_WATCHDOG_TIMEOUT_SECONDS", "10.0"))
+WATCHDOG_BACKSTOP_SECONDS = float(os.getenv("BREWCTL_WATCHDOG_BACKSTOP_SECONDS", "300.0"))
 WATCHDOG_POLL_INTERVAL_SECONDS = 1.0
 _last_valve_command_time = time.time()
+_last_heartbeat_time = 0.0
 
 
 def feed_watchdog() -> None:
@@ -73,16 +90,36 @@ def feed_watchdog() -> None:
     _last_valve_command_time = time.time()
 
 
+def record_heartbeat() -> None:
+    """
+    Record an explicit heartbeat. Unlike a valve command this proves the caller
+    speaks the current contract, which is what earns the shorter timeout.
+    """
+    global _last_heartbeat_time
+    _last_heartbeat_time = time.time()
+    feed_watchdog()
+
+
+def effective_watchdog_timeout(now: float | None = None) -> float:
+    """Seconds of silence tolerated before the valve is closed. See above."""
+    now = time.time() if now is None else now
+    if now - _last_heartbeat_time <= WATCHDOG_BACKSTOP_SECONDS:
+        return WATCHDOG_TIMEOUT_SECONDS
+    return WATCHDOG_BACKSTOP_SECONDS
+
+
 async def hardware_watchdog():
-    """Close the valve if no valve command or heartbeat arrives in time."""
+    """Close the valve if nothing feeds the timer within the effective timeout."""
     while True:
         await asyncio.sleep(WATCHDOG_POLL_INTERVAL_SECONDS)
+        timeout = WATCHDOG_BACKSTOP_SECONDS
         try:
             if valve is None:
                 continue
 
+            timeout = effective_watchdog_timeout()
             elapsed = time.time() - _last_valve_command_time
-            if elapsed <= WATCHDOG_TIMEOUT_SECONDS:
+            if elapsed <= timeout:
                 continue
 
             position = await asyncio.to_thread(valve.get_position)
@@ -90,8 +127,8 @@ async def hardware_watchdog():
                 continue
 
             logger.warning(
-                f"Hardware watchdog triggered: no valve command for {elapsed:.1f}s "
-                f"(timeout {WATCHDOG_TIMEOUT_SECONDS}s), position {position}. Closing valve."
+                f"Hardware watchdog triggered: nothing fed the timer for {elapsed:.1f}s "
+                f"(timeout {timeout}s), position {position}. Closing valve."
             )
             await asyncio.to_thread(valve.return_to_start)
         except asyncio.CancelledError:
@@ -101,7 +138,7 @@ async def hardware_watchdog():
         finally:
             # Re-arm regardless of outcome so a wedged valve doesn't spam retries
             # faster than the timeout.
-            if time.time() - _last_valve_command_time > WATCHDOG_TIMEOUT_SECONDS:
+            if time.time() - _last_valve_command_time > timeout:
                 feed_watchdog()
 
 
@@ -176,6 +213,7 @@ async def health():
     return {
         "status": "healthy",
         "mode": "hardware",
+        "hardware_api_version": HARDWARE_API_VERSION,
         "valve": valve_health,
         "scale": scale_health,
     }
@@ -193,12 +231,16 @@ async def heartbeat():
     if valve is None:
         raise HTTPException(status_code=503, detail="valve not available")
 
-    feed_watchdog()
+    record_heartbeat()
     position = await asyncio.to_thread(valve.get_position)
     return {
         "status": "ok",
         "position": position,
-        "watchdog_timeout_seconds": WATCHDOG_TIMEOUT_SECONDS,
+        "watchdog_timeout_seconds": effective_watchdog_timeout(),
+        # Returned here as well as in /health so the api re-checks the contract on
+        # every heartbeat (~3s). A startup-only check would miss a Pi rebooted or
+        # downgraded partway through a 6-hour brew.
+        "hardware_api_version": HARDWARE_API_VERSION,
     }
 
 

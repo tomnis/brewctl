@@ -1,0 +1,204 @@
+# Test, build, smoke-test, and ship the api image to the NAS.
+#
+# There is no registry. The image is streamed straight onto the deploy host with
+# `docker save | ssh docker load`, so image references in deploy/nas/app.yaml are
+# bare local tags (`brewctl:sha-...`) and the NAS daemon must never be asked to
+# pull them -- app.yaml pins an exact tag for that reason.
+#
+# Shipping is not deploying. This workflow only puts the image on the box;
+# promotion is a separate, deliberate commit that bumps the tag in
+# deploy/nas/app.yaml (see deploy.yml). That keeps git the record of what is
+# running and makes rollback a `git revert` -- valid as long as the older image
+# is still loaded on the NAS (see the prune step below).
+#
+# Forgejo is the CI origin: push directly to the `forgejo` remote. A *pull*
+# mirror from GitHub would not work, because mirror syncs bypass the hooks that
+# create workflow runs.
+#
+# Repo config required:
+#   vars.DEPLOY_USER          ssh user on the NAS (needs docker socket access)
+#   vars.DEPLOY_HOST          192.168.0.69
+#   secrets.DEPLOY_SSH_KEY    private key, unencrypted
+#   secrets.DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan <host>`
+#
+# The runner needs a Docker daemon (DinD or a mounted socket).
+
+name: Build and ship
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Extra image tag to build and ship
+        required: false
+        default: ''
+
+env:
+  IMAGE: brewctl
+  DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+  # How many brewctl images to keep on the NAS after a ship. Rollback by
+  # `git revert` only works while the previous image is still there.
+  KEEP_IMAGES: 5
+
+jobs:
+  test:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend tests
+        run: |
+          cd backend
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements/dev.txt
+          .venv/bin/pytest tests
+
+      - name: Frontend tests and build
+        run: |
+          cd frontend
+          npm ci --no-audit
+          npm run test:run
+          npm run build
+
+      # The Pi is deployed by hand and never self-updates, so a contract bump
+      # that ships to the NAS without a matching push to the Pi will block
+      # brewing. Say so loudly rather than letting it be discovered at brew time.
+      - name: Warn on hardware contract change
+        run: |
+          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null \
+               | grep -q 'backend/src/brewctl/core/contract.py'; then
+            echo "::warning::hardware contract changed -- run 'make deploy-pi' or brews will be refused"
+          fi
+
+  ship:
+    runs-on: docker
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine tags
+        id: tag
+        run: |
+          # sha- is the tag app.yaml pins: stable across re-runs and traceable
+          # back to a commit. The build number is a convenience alias for humans.
+          sha="sha-${GITHUB_SHA::12}"
+          build="b${{ github.run_number }}"
+          tags="$sha $build"
+          # Tag pushes also get the tag name, which is what a release is
+          # referred to by.
+          case "$GITHUB_REF" in
+            refs/tags/*) tags="$tags ${GITHUB_REF#refs/tags/}" ;;
+          esac
+          [ -n "${{ inputs.tag }}" ] && tags="$tags ${{ inputs.tag }}"
+          {
+            echo "primary=$sha"
+            echo "tags=$tags"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          args=""
+          for t in ${{ steps.tag.outputs.tags }}; do
+            args="$args -t ${IMAGE}:$t"
+          done
+          # Dockerfile at the repo root builds the frontend and bundles it into
+          # the api image, so the context is the whole repo.
+          docker build \
+            --label "org.opencontainers.image.title=${IMAGE}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${{ steps.tag.outputs.primary }}" \
+            --label "org.opencontainers.image.created=${{ steps.tag.outputs.created }}" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.ref.name=${{ github.ref_name }}" \
+            --label "build.run_id=${{ github.run_id }}" \
+            --label "build.run_number=${{ github.run_number }}" \
+            $args .
+
+      - name: Smoke test the image
+        run: |
+          set -e
+          docker rm -f brewctl-smoke 2>/dev/null || true
+          # No hardware and no InfluxDB here: the api starts anyway and reports
+          # "degraded", which is enough to prove the image boots and serves.
+          docker run -d --name brewctl-smoke \
+            -e BREWCTL_MODE=api \
+            -e BREWCTL_IS_PROD=false \
+            "${IMAGE}:${{ steps.tag.outputs.primary }}"
+
+          # The container is a sibling of this job (shared daemon), so probe from
+          # inside it rather than through a published port.
+          #
+          # /api/health, NOT "/" -- the api serves no root route, so "/" is a
+          # permanent 404 and would never pass.
+          probe='import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/api/health").status==200 else 1)'
+          ok=""
+          for _ in $(seq 1 30); do
+            if docker exec brewctl-smoke python -c "$probe" 2>/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "api did not become healthy"
+            docker logs brewctl-smoke
+            docker rm -f brewctl-smoke
+            exit 1
+          fi
+
+          # The frontend is baked into this image and served at /app. A build
+          # that silently shipped without the bundle looks perfectly healthy.
+          docker exec brewctl-smoke python -c \
+            'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/app/").status==200 else 1)'
+
+          docker rm -f brewctl-smoke
+
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Ship image to the NAS
+        run: |
+          args=""
+          for t in ${{ steps.tag.outputs.tags }}; do
+            args="$args ${IMAGE}:$t"
+          done
+          # gzip -1: the link is a LAN, so CPU is the bottleneck, not bandwidth.
+          docker save $args \
+            | gzip -1 \
+            | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+                  "${DEPLOY_USER}@${DEPLOY_HOST}" 'gunzip | docker load'
+
+      # Untagged/old images accumulate on a box with a finite pool. Keep the
+      # newest KEEP_IMAGES so a revert still has something to roll back to.
+      - name: Prune old images on the NAS
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+              "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "docker images '${IMAGE}' --format '{{.ID}}' \
+                 | awk '!seen[\$0]++' \
+                 | tail -n +$((KEEP_IMAGES + 1)) \
+                 | xargs -r docker rmi || true"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
+
+      - name: Summary
+        run: |
+          {
+            echo "Loaded on ${DEPLOY_HOST}:"
+            echo '```'
+            for t in ${{ steps.tag.outputs.tags }}; do echo "${IMAGE}:$t"; done
+            echo '```'
+            echo "To deploy: set the image in deploy/nas/app.yaml to \`${IMAGE}:${{ steps.tag.outputs.primary }}\` and push."
+          } >> $GITHUB_STEP_SUMMARY

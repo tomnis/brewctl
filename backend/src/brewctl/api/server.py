@@ -23,6 +23,7 @@ from pydantic import field_validator
 from typing import Annotated
 
 from brewctl.core.log import logger
+from brewctl.core.contract import HARDWARE_API_VERSION, MIN_HARDWARE_API_VERSION
 from brewctl.core.config import *
 from brewctl.api.config import *
 from brewctl.core.model import *
@@ -80,6 +81,28 @@ async def lifespan(app: FastAPI):
     """
     logger.info("Starting SSE listeners...")
     valve.connect()
+
+    # Log the hardware contract state at startup. Deliberately non-fatal: the Pi is
+    # often powered off, and refusing to boot would take the UI down with it -- the
+    # UI is exactly where you would find out what is wrong. Enforcement happens at
+    # brew start instead.
+    try:
+        await asyncio.to_thread(valve.heartbeat)
+    except Exception as e:
+        logger.warning(f"Could not reach hardware service at startup: {e}")
+    compat = check_hardware_compatibility()
+    if compat["compatible"]:
+        logger.info(
+            f"Hardware contract OK: v{compat['hardware_api_version']} "
+            f"(api requires v{MIN_HARDWARE_API_VERSION})"
+        )
+    else:
+        logger.warning(
+            f"Hardware contract MISMATCH: hardware reports "
+            f"v{compat['hardware_api_version']}, api requires v{MIN_HARDWARE_API_VERSION} "
+            f"({compat['reason']}). Brews will be refused until the Pi is updated."
+        )
+
     logger.info("lifespan: server startup complete, yielding control")
     yield
     if scale is not None:
@@ -260,6 +283,12 @@ def health_check():
     # Degraded: some components have issues but core functionality works
     # Unhealthy: critical components are down
 
+    # Contract version of the hardware service, so the UI can warn that the Pi
+    # needs a push rather than letting a brew fail only at start time. Reads a
+    # cached value -- no HTTP, so this stays fast and does not block when the Pi
+    # is powered off.
+    hardware_compat = check_hardware_compatibility()
+
     issues = []
     if not scale_health["connected"]:
         issues.append("scale not connected")
@@ -267,6 +296,8 @@ def health_check():
         issues.append("valve not available")
     if not influxdb_health["connected"]:
         issues.append("influxdb not connected")
+    if not hardware_compat["compatible"]:
+        issues.append("hardware contract mismatch")
 
     if len(issues) == 0:
         overall_status = HealthStatus.HEALTHY
@@ -281,6 +312,7 @@ def health_check():
         valve=valve_health,
         influxdb=influxdb_health,
         brew=brew_health,
+        hardware=hardware_compat,
         timestamp=datetime.now(timezone.utc),
     )
 
@@ -323,8 +355,13 @@ async def collect_scale_data_task(brew_id, s):
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
                     time_series.write_scale_data(weight, battery_pct, brew_id)
                     weight_buffer.add_reading(weight)
-                    # Reset state to brewing on successful data collection
-                    cur_brew.status = BrewState.BREWING
+                    # Recover from ERROR on a successful read -- but never from
+                    # PAUSED. This loop also runs while paused (so the weight
+                    # series has no gap), and unconditionally setting BREWING here
+                    # silently un-paused the brew within one interval (0.5s),
+                    # after which brew_step_task resumed driving the valve.
+                    if cur_brew.status == BrewState.ERROR:
+                        cur_brew.status = BrewState.BREWING
             await asyncio.sleep(s)
             # TODO should we also record the derivative as we've calculated it?
         except Exception as e:
@@ -333,6 +370,38 @@ async def collect_scale_data_task(brew_id, s):
                 cur_brew.status = BrewState.ERROR
                 cur_brew.error_message = str(e)
             await asyncio.sleep(s)
+
+
+def check_hardware_compatibility() -> dict:
+    """
+    Compare the hardware service's contract version against what this api needs.
+
+    The Pi is deployed by hand and never self-updates, so it can lag this service
+    indefinitely -- this is what turns "forgot to push to the Pi" from a silent
+    mid-brew failure into a refusal at the point of starting a brew.
+
+    Reads the version cached from the last heartbeat rather than making an HTTP
+    call, so this is safe to use on hot paths and does not block when the Pi is off.
+    """
+    version = getattr(valve, "hardware_api_version", None)
+    # isinstance rather than a None check: a local/mock valve has no version at all,
+    # and a malformed response could put anything here. bool is an int subclass, so
+    # exclude it explicitly.
+    if not isinstance(version, int) or isinstance(version, bool):
+        # Never reached the hardware service, so we genuinely do not know. Treat as
+        # incompatible: better to refuse than to start a brew we may not control.
+        return {
+            "compatible": False,
+            "hardware_api_version": None,
+            "required": MIN_HARDWARE_API_VERSION,
+            "reason": "hardware service not yet reached",
+        }
+    return {
+        "compatible": version >= MIN_HARDWARE_API_VERSION,
+        "hardware_api_version": version,
+        "required": MIN_HARDWARE_API_VERSION,
+        "reason": None if version >= MIN_HARDWARE_API_VERSION else "hardware too old",
+    }
 
 
 HEARTBEAT_INTERVAL_SECONDS = 3.0
@@ -362,6 +431,17 @@ async def sleep_with_heartbeat(seconds: float):
 async def brew_step_task(brew_id, strategy):
     """brew"""
     global cur_brew
+
+    # Heartbeat before touching the valve at all. The loop below opens the valve and
+    # only heartbeats after the first sleep chunk, so without this there is a window
+    # of up to HEARTBEAT_INTERVAL_SECONDS where the valve is open but the hardware
+    # has never seen a heartbeat -- which puts its watchdog on the slow backstop
+    # timer rather than the tight one.
+    try:
+        await asyncio.to_thread(valve.heartbeat)
+    except Exception as e:
+        logger.warning(f"Initial valve heartbeat failed: {e}")
+
     while brew_id is not None and cur_brew is not None and brew_id == cur_brew.id:
         try:
             # Execute valve commands when actively brewing or in error state (to recover)
@@ -399,8 +479,12 @@ async def brew_step_task(brew_id, strategy):
                     await asyncio.to_thread(valve.step_forward)
                 elif valve_command == ValveCommand.BACKWARD:
                     await asyncio.to_thread(valve.step_backward)
-                # Reset state to brewing on successful valve operation
-                cur_brew.status = BrewState.BREWING
+                # Recover from ERROR on a successful valve operation -- but never
+                # clobber PAUSED. There are awaits above, so a pause can land
+                # mid-step; assigning BREWING unconditionally here silently
+                # resumed it.
+                if cur_brew is not None and cur_brew.status == BrewState.ERROR:
+                    cur_brew.status = BrewState.BREWING
                 await sleep_with_heartbeat(interval)
             else:
                 # When paused, just sleep and check again. Still heartbeat: a paused
@@ -453,7 +537,27 @@ async def start_brew(req: StartBrewRequest | None = None):
         BrewState.BREWING,
         BrewState.PAUSED,
     ):
-        raise HTTPException(status_code=409, detail="A brew is already in progress")
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "brew_in_progress", "message": "A brew is already in progress"},
+        )
+
+    # Refuse before the scale backoff below, so a version mismatch fails immediately
+    # instead of waiting out several reconnect attempts first.
+    compat = check_hardware_compatibility()
+    if not compat["compatible"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hardware_version_mismatch",
+                "message": (
+                    f"Hardware service speaks contract v{compat['hardware_api_version']}, "
+                    f"this api requires v{MIN_HARDWARE_API_VERSION}. "
+                    "Push the latest code to the Pi (make deploy-pi)."
+                ),
+                **compat,
+            },
+        )
 
     # Try to connect to scale with exponential backoff
     if scale is None or not scale.connected:
@@ -932,6 +1036,7 @@ async def nudge_open():
         _nudge_last_call_time = current_time
 
     logger.info(f"Nudge open for brew {cur_brew.id}")
+    await asyncio.to_thread(valve.heartbeat)
     await asyncio.to_thread(valve.step_forward)
     return BrewCommandResponse(
         status="nudged_open", brew_id=cur_brew.id, brew_state=cur_brew.status
@@ -956,6 +1061,7 @@ async def nudge_close():
         _nudge_last_call_time = current_time
 
     logger.info(f"Nudge close for brew {cur_brew.id}")
+    await asyncio.to_thread(valve.heartbeat)
     await asyncio.to_thread(valve.step_backward)
     return BrewCommandResponse(
         status="nudged_closed", brew_id=cur_brew.id, brew_state=cur_brew.status

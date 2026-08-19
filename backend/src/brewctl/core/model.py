@@ -169,4 +169,7 @@ class HealthResponse(BaseModel):
     valve: dict  # available
     influxdb: dict  # connected, error message if any
     brew: dict  # in_progress, brew_id, status
+    # compatible, hardware_api_version, required, reason. The Pi is deployed by
+    # hand and can lag this service, so the UI needs to be able to say so.
+    hardware: dict = {}
     timestamp: datetime

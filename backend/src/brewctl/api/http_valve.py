@@ -7,6 +7,7 @@ import httpx
 
 from brewctl.core.valve import AbstractValve
 from brewctl.core.log import logger
+from brewctl.core.contract import UNKNOWN_HARDWARE_API_VERSION
 
 # The hardware service now lives on a separate host, so every command needs a
 # bound -- a wedged Pi must not hang the caller indefinitely.
@@ -23,6 +24,8 @@ class HttpValve(AbstractValve):
         # Cached values from SSE stream
         self._available: bool = False
         self._position: int | None = None
+        # None until the hardware service has actually been reached.
+        self._hardware_api_version: int | None = None
 
         # Thread safety
         self._lock = threading.RLock()
@@ -148,10 +151,25 @@ class HttpValve(AbstractValve):
     def heartbeat(self):
         """
         Tell the hardware watchdog a controller is still alive and holding the valve.
-        Must be called more often than the hardware's WATCHDOG_TIMEOUT_SECONDS, or the
+        Must be called more often than the hardware's watchdog timeout, or the
         hardware service will close the valve mid-brew.
+
+        Also records the hardware's contract version from the response, so a Pi that
+        is rebooted or downgraded partway through a brew is noticed within ~3s
+        rather than going undetected until the next api restart.
         """
-        self._request("POST", "/api/valve/heartbeat")
+        body = self._request("POST", "/api/valve/heartbeat")
+        with self._lock:
+            self._hardware_api_version = body.get(
+                "hardware_api_version", UNKNOWN_HARDWARE_API_VERSION
+            )
+        return body
+
+    @property
+    def hardware_api_version(self) -> int | None:
+        """Last version reported by the hardware service, or None if never seen."""
+        with self._lock:
+            return self._hardware_api_version
 
     def step_forward(self):
         self._request("POST", "/api/valve/nudge/open")

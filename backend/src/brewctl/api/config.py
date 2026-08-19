@@ -1,6 +1,7 @@
 import os
 
 from ..core.log import logger
+from ..core.secrets import SecretConfigError, read_secret
 
 # ===== API Configuration =====
 # Configuration specific to the API service
@@ -13,7 +14,17 @@ if BREWCTL_INFLUXDB_URL:
 else:
     logger.warning("BREWCTL_INFLUXDB_URL not set - time series functionality disabled")
 
-BREWCTL_INFLUXDB_TOKEN = os.environ.get("BREWCTL_INFLUXDB_TOKEN", "")
+# Supports BREWCTL_INFLUXDB_TOKEN_FILE, which is how the token reaches the
+# container in production without being written into the deployment manifest.
+BREWCTL_INFLUXDB_TOKEN = read_secret("BREWCTL_INFLUXDB_TOKEN")
+if os.environ.get("BREWCTL_IS_PROD", "false") == "true" and not BREWCTL_INFLUXDB_TOKEN:
+    # Fail at startup rather than at the first write, which could be hours into a
+    # brew. Only enforced in prod so dev and tests can run without InfluxDB.
+    raise SecretConfigError(
+        "BREWCTL_IS_PROD is true but no InfluxDB token is configured. "
+        "Set BREWCTL_INFLUXDB_TOKEN_FILE (preferred) or BREWCTL_INFLUXDB_TOKEN."
+    )
+
 BREWCTL_INFLUXDB_ORG = os.environ.get("BREWCTL_INFLUXDB_ORG", "")
 logger.info(f"BREWCTL_INFLUXDB_ORG = {BREWCTL_INFLUXDB_ORG}")
 

@@ -15,7 +15,9 @@ def test_brew_kill(client):
     # Try to start another brew while one is in progress
     response = client.post("/api/brew/start")
     assert response.status_code == 409
-    assert response.json()["detail"] == "A brew is already in progress"
+    # Machine-readable code: brew-in-progress and hardware-version-mismatch both
+    # return 409, and the frontend has to tell them apart.
+    assert response.json()["detail"]["code"] == "brew_in_progress"
 
     # Kill the brew
     response = client.post("/api/brew/kill")

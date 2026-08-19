@@ -1,0 +1,83 @@
+# brewctl on TrueNAS -- the deployment manifest.
+#
+# This file IS the desired state. `PUT /api/v2.0/app/id/brewctl-api` takes a
+# custom app's entire compose config as `custom_compose_config_string`, so there
+# is nothing to template and no second source of truth: deploy/nas/apply.sh posts
+# this file verbatim. Rollback is `git revert` of the commit that bumped the tag.
+#
+#   ./deploy/nas/apply.sh deploy/nas/app.yaml
+#
+# The app must be created once through the TrueNAS Custom App UI before apply.sh
+# can update it -- PUT is update, not create.
+#
+# Only the api runs here. The hardware service runs bare metal on the Pi and is
+# deployed by hand with `make deploy-pi`; it is never containerised.
+#
+# NOTE: literal values only, no ${VAR} interpolation. A Custom App has no .env
+# beside this file, so `${VAR}` would expand to empty and `${VAR:-default}` would
+# be worse -- it would silently mask a wrong Pi address instead of failing.
+# The consequence is that this file serves exactly one environment. That is fine.
+
+services:
+  api:
+    # Pinned, never :latest. This is the only way to know what is running and the
+    # only way to roll back to an artifact that already exists. Bump this one line
+    # to deploy; CI loads brewctl:sha-<short> onto this host for every build.
+    #
+    # There is no registry -- the tag is local to this host's Docker daemon, put
+    # there by `docker load` (see .forgejo/workflows/build.yml). pull_policy:
+    # never so a typo'd tag fails immediately instead of hanging on a pull from
+    # Docker Hub that can never succeed.
+    image: brewctl:sha-REPLACE_ME
+    pull_policy: never
+    container_name: brewctl-api
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      BREWCTL_MODE: api
+      BREWCTL_IS_PROD: "true"
+
+      # The Pi, by IP. Not coldbrewer.local: mDNS does not resolve from inside a
+      # container. Give the Pi a DHCP reservation so this stays valid.
+      BREWCTL_HARDWARE_URL: "http://192.168.0.224:8000"
+
+      BREWCTL_INFLUXDB_URL: "http://influxdb.catacombs.local"
+      BREWCTL_INFLUXDB_ORG: "catacombs"
+      BREWCTL_INFLUXDB_BUCKET: "coldbrew"
+      # Read from the mounted secret, so the token appears neither in this file
+      # nor in `docker inspect`. The api refuses to start if it cannot read it.
+      BREWCTL_INFLUXDB_TOKEN_FILE: /run/secrets/influxdb_token
+
+      BREWCTL_VALVE_INTERVAL_SECONDS: "90"
+      BREWCTL_TARGET_WEIGHT_GRAMS: "1337"
+      BREWCTL_VESSEL_WEIGHT_GRAMS: "229"
+
+      # Empty on purpose. The api serves the UI itself at /app, so requests are
+      # same-origin and CORS never applies. Leaving this unset would fall back to
+      # the dev default (http://localhost:5173) and add it to production origins.
+      BREWCTL_CORS_ORIGINS: ""
+
+    secrets:
+      - influxdb_token
+
+    healthcheck:
+      # /api/health, NOT "/" -- the api serves no root route, so probing "/" is a
+      # permanent 404 and the container would never report healthy.
+      # Checks the api itself, not the Pi: the api must stay up and reporting even
+      # when the hardware service is unreachable, because that is how you find out.
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+secrets:
+  influxdb_token:
+    # Host path on the NAS, root:root 0400. Created once during bootstrap; not
+    # managed by this file. Replace <pool> with the real pool name.
+    file: /mnt/<pool>/apps/brewctl/influxdb_token

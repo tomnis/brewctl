@@ -22,12 +22,19 @@ def mock_scale():
 
 @pytest.fixture
 def mock_valve():
-    """Mock valve for testing."""
+    """Mock valve for testing. Emulates an up-to-date hardware service."""
+    from brewctl.core.contract import HARDWARE_API_VERSION
+
     valve = MagicMock()
     valve.step_forward.return_value = None
     valve.step_backward.return_value = None
     valve.return_to_start.return_value = None
     valve.release.return_value = None
+    valve.heartbeat.return_value = {"hardware_api_version": HARDWARE_API_VERSION}
+    # Must be a real int: check_hardware_compatibility refuses to start a brew
+    # against anything it cannot read a version from, and a bare MagicMock
+    # attribute is not an int.
+    valve.hardware_api_version = HARDWARE_API_VERSION
     return valve
 
 

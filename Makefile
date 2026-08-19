@@ -1,22 +1,29 @@
-NAS_COMPOSE := deploy/nas/docker-compose.yml
+NAS_MANIFEST := deploy/nas/app.yaml
 
 # Local development: all three services on one host, hardware in mock mode.
 dev:
 	docker compose build && docker compose up
 
+# Run the production artifact locally: the image CI publishes, serving the
+# bundled frontend at http://localhost:8000/app, against a mock hardware service.
+prod-local:
+	docker compose -f docker-compose.prod.yml up --build
+
 # Build the production api image (bundles the frontend, served at /app).
 build-prod-image:
-	docker compose -f $(NAS_COMPOSE) build
+	docker build -t brewctl-api:local .
 
-# Deploy api + frontend to the NAS. Run this on the NAS, with deploy/nas/.env in place.
+# Apply the manifest to the TrueNAS custom app. Needs TRUENAS_URL and
+# TRUENAS_API_KEY. There is no compose build here -- a TrueNAS Custom App
+# deploys from a registry image, not from source.
 deploy-nas:
-	docker compose -f $(NAS_COMPOSE) up -d --build
+	./deploy/nas/apply.sh $(NAS_MANIFEST)
 
 # Deploy the hardware service to the Pi. Bare metal -- no Docker on that box.
 # The post-receive hook refreshes deps and restarts the unit; run
 # deploy/pi/install.sh on the Pi itself for the first install or unit changes.
 deploy-pi:
-	git push pi $$(git rev-parse --abbrev-ref HEAD)
+	git push coldbrewer $$(git rev-parse --abbrev-ref HEAD)
 
 testBackend:
 	cd backend && pytest tests
@@ -29,4 +36,4 @@ test: testBackend testFrontend
 lint:
 	cd frontend && npm run lint
 
-.PHONY: dev build-prod-image deploy-nas deploy-pi testBackend testFrontend test lint
+.PHONY: dev prod-local build-prod-image deploy-nas deploy-pi testBackend testFrontend test lint
