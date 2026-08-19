@@ -55,6 +55,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The runner image ships python3 without ensurepip, so `python3 -m venv`
+      # fails ("you need to install the python3-venv package"). Install the venv
+      # package matching whatever python3 the image actually has, rather than
+      # hardcoding a version that changes out from under this when the runner
+      # image is updated.
+      #
+      # A venv is still worth it over `pip install --break-system-packages`: the
+      # runner is long-lived, and dumping deps into the system python leaks
+      # between builds of different branches.
+      - name: Ensure python venv support
+        run: |
+          if ! python3 -c 'import ensurepip' 2>/dev/null; then
+            pyver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+            apt-get update -qq
+            apt-get install -y -qq "python${pyver}-venv" || apt-get install -y -qq python3-venv
+          fi
+
+      # NOTE: this is the runner image's python, not the 3.13 the image runs on
+      # (see Dockerfile). Version-sensitive behaviour will not be caught here.
       - name: Backend tests
         run: |
           cd backend
