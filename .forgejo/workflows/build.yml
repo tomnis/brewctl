@@ -2,7 +2,8 @@
 #
 # There is no registry. The image is streamed straight onto the deploy host with
 # `docker save | ssh docker load`, so image references in deploy/nas/app.yaml are
-# bare local tags (`brewctl:sha-...`) and the NAS daemon must never be asked to
+# registry-less local tags (`tomas/brewctl:sha-...`, org prefix kept so images
+# from different repos on that daemon cannot collide) and the NAS must never be asked to
 # pull them -- app.yaml pins an exact tag for that reason.
 #
 # Shipping is not deploying. This workflow only puts the image on the box;
@@ -42,7 +43,18 @@ on:
         default: ''
 
 env:
-  IMAGE: brewctl
+  # Image name. Empty means "derive from the repository name" -- the common case
+  # of one image per repo needs no configuration.
+  #
+  # The full reference is assembled as <REGISTRY><owner>/<IMAGE>, so the owner
+  # (the Forgejo org) is part of every tag: `tomas/brewctl:sha-...` rather than a
+  # bare `brewctl`, which would collide with any other org's image on a NAS
+  # daemon that holds images from several repos. Adding a registry later is then
+  # a one-line change here rather than an edit to every docker invocation.
+  IMAGE: ""
+  # Empty: images are loaded straight onto the deploy target, not pulled.
+  # Set to "forgejo.catacombs.local/" -- with trailing slash -- if a registry lands.
+  REGISTRY: ""
   DEPLOY_USER: ${{ vars.DEPLOY_USER }}
   DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
   # How many brewctl images to keep on the NAS after a ship. Rollback by
@@ -140,9 +152,20 @@ jobs:
               tags="$tags branch-${slug}" ;;
           esac
           [ -n "${{ inputs.tag }}" ] && tags="$tags ${{ inputs.tag }}"
+
+          # Default the image name to the repository name. Derived from
+          # GITHUB_REPOSITORY rather than the event payload so it resolves the
+          # same way on push and workflow_dispatch.
+          image="${IMAGE:-${GITHUB_REPOSITORY##*/}}"
+
+          # Fully-qualified repository, lowercased: Docker rejects uppercase in
+          # the repository portion of a reference, but Forgejo org names allow it.
+          repo="$(echo "${REGISTRY}${{ github.repository_owner }}/${image}" | tr '[:upper:]' '[:lower:]')"
           {
             echo "primary=$sha"
             echo "tags=$tags"
+            echo "image=$image"
+            echo "repo=$repo"
             echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
@@ -150,12 +173,12 @@ jobs:
         run: |
           args=""
           for t in ${{ steps.tag.outputs.tags }}; do
-            args="$args -t ${IMAGE}:$t"
+            args="$args -t ${{ steps.tag.outputs.repo }}:$t"
           done
           # Dockerfile at the repo root builds the frontend and bundles it into
           # the api image, so the context is the whole repo.
           docker build \
-            --label "org.opencontainers.image.title=${IMAGE}" \
+            --label "org.opencontainers.image.title=${{ steps.tag.outputs.image }}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.version=${{ steps.tag.outputs.primary }}" \
             --label "org.opencontainers.image.created=${{ steps.tag.outputs.created }}" \
@@ -183,7 +206,7 @@ jobs:
             -e BREWCTL_MODE=api \
             -e BREWCTL_IS_PROD=false \
             -e BREWCTL_HARDWARE_URL=http://127.0.0.1:9 \
-            "${IMAGE}:${{ steps.tag.outputs.primary }}"
+            "${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}"
 
           # The container is a sibling of this job (shared daemon), so probe from
           # inside it rather than through a published port.
@@ -225,7 +248,7 @@ jobs:
         run: |
           args=""
           for t in ${{ steps.tag.outputs.tags }}; do
-            args="$args ${IMAGE}:$t"
+            args="$args ${{ steps.tag.outputs.repo }}:$t"
           done
           # gzip -1: the link is a LAN, so CPU is the bottleneck, not bandwidth.
           docker save $args \
@@ -244,7 +267,7 @@ jobs:
       #  run: |
       #    ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
       #        "${DEPLOY_USER}@${DEPLOY_HOST}" \
-      #        "docker images '${IMAGE}' --format '{{.ID}}' \
+      #        "docker images '${{ steps.tag.outputs.repo }}' --format '{{.ID}}' \
       #           | awk '!seen[\$0]++' \
       #           | tail -n +$((KEEP_IMAGES + 1)) \
       #           | xargs -r docker rmi || true"
@@ -258,7 +281,7 @@ jobs:
           {
             echo "Loaded on ${DEPLOY_HOST}:"
             echo '```'
-            for t in ${{ steps.tag.outputs.tags }}; do echo "${IMAGE}:$t"; done
+            for t in ${{ steps.tag.outputs.tags }}; do echo "${{ steps.tag.outputs.repo }}:$t"; done
             echo '```'
-            echo "To deploy: set the image in deploy/nas/app.yaml to \`${IMAGE}:${{ steps.tag.outputs.primary }}\` and push."
+            echo "To deploy: set the image in deploy/nas/app.yaml to \`${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}\` and push."
           } >> $GITHUB_STEP_SUMMARY

@@ -22,13 +22,15 @@ services:
   api:
     # Pinned, never :latest. This is the only way to know what is running and the
     # only way to roll back to an artifact that already exists. Bump this one line
-    # to deploy; CI loads brewctl:sha-<short> onto this host for every build.
+    # to deploy; CI loads tomas/brewctl:sha-<short> onto this host for every build.
     #
     # There is no registry -- the tag is local to this host's Docker daemon, put
-    # there by `docker load` (see .forgejo/workflows/build.yml). pull_policy:
-    # never so a typo'd tag fails immediately instead of hanging on a pull from
-    # Docker Hub that can never succeed.
-    image: brewctl:sha-REPLACE_ME
+    # there by `docker load` (see .forgejo/workflows/build.yml). The owner
+    # (Forgejo org) prefix is still carried so images from different repos on
+    # this daemon cannot collide. pull_policy: never so a typo'd tag fails
+    # immediately instead of hanging on a pull from Docker Hub that can never
+    # succeed.
+    image: tomas/brewctl:sha-REPLACE_ME
     pull_policy: never
     container_name: brewctl-api
     restart: unless-stopped
