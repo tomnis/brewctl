@@ -161,8 +161,10 @@ not trigger runs.
   loops did, which silently un-paused a paused brew and resumed driving the valve — the scale loop
   runs while `PAUSED`, and the step loop has awaits during which a pause can land. Only recover from
   `ERROR`. Covered by `tests/api/test_brew_pause.py`.
-- The api has **no `/` route** (only `/api/*`, `/sse/*`, `/ws/*` and the `/app/{path}` catchall), so
-  container healthchecks must probe `/api/health`. Probing `/` is a permanent 404.
+- `/` is a **307 redirect to `/app/`** and nothing else — container healthchecks and proxy probes must
+  still target `/api/health`. A redirect is not a health signal: a probe that follows it reports the
+  static bundle's availability, not the api's. (Before that redirect existed, `/` was a permanent 404,
+  which is what made probing it obviously wrong; now it fails quietly instead.)
 - Secrets support `<VAR>_FILE` indirection via `core/secrets.py` (used for `BREWCTL_INFLUXDB_TOKEN`).
   It **raises** when the file is set but unreadable rather than falling back to an empty value, which
   would otherwise surface as an opaque InfluxDB 401 hours into a brew. `api/config.py` also raises at

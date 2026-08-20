@@ -16,7 +16,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from pydantic import field_validator
@@ -1079,6 +1079,27 @@ async def nudge_close():
 
 
 # ---- ui endpoints ----#
+
+
+@app.get("/", include_in_schema=False)
+async def root_to_app():
+    """
+    Send bare / to the UI.
+
+    There was no root route at all, so every way in -- the published port, the
+    Traefik hostname, a bookmark -- answered 404 to anyone who did not already
+    know the UI lives at /app. Doing it here rather than as a Traefik middleware
+    means it holds for direct :8000 access and `make prod-local` too, not only
+    through the proxy.
+
+    307, not 308: a permanent redirect is cached by browsers indefinitely, which
+    would be painful to undo if / ever needs to serve something else.
+    Redirecting to "/app/" with the trailing slash avoids a second hop through
+    the catchall below.
+    """
+    return RedirectResponse(url="/app/", status_code=307)
+
+
 # for react assets
 assets_dir = "build/assets"
 if not os.path.exists(assets_dir):
