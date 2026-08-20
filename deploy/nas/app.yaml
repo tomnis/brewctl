@@ -93,5 +93,7 @@ services:
 secrets:
   influxdb_token:
     # Host path on the NAS, root:root 0400. Created once during bootstrap; not
-    # managed by this file. Replace <pool> with the real pool name.
-    file: /mnt/<pool>/apps/brewctl/influxdb_token
+    # managed by this file -- apply.sh does not create it, and a missing or empty
+    # file makes the api refuse to start (core/secrets.py raises rather than
+    # falling back to an empty token).
+    file: /mnt/fast/apps/brewctl/influxdb_token
