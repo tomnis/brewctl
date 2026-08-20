@@ -1,0 +1,9 @@
+# Local development and CI.
+#
+# Deliberately does NOT include hardware.txt: bluepy and RPi.GPIO are Linux/Pi
+# only and will not build on a dev machine. The device libraries are imported
+# lazily inside create_scale()/create_valve() behind BREWCTL_IS_PROD, and the
+# test suite uses mocks, so they are never needed off the Pi.
+-r api.txt
+
+pytest==9.0.2

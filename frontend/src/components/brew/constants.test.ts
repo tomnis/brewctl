@@ -193,7 +193,7 @@ describe('API Functions', () => {
 
   describe('pauseBrew', () => {
     it('should call the correct endpoint', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         statusText: 'OK',
       });
@@ -208,7 +208,7 @@ describe('API Functions', () => {
     });
 
     it('should throw error when response is not ok', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         statusText: 'Internal Server Error',
       });
@@ -219,7 +219,7 @@ describe('API Functions', () => {
 
   describe('resumeBrew', () => {
     it('should call the correct endpoint', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         statusText: 'OK',
       });
@@ -234,7 +234,7 @@ describe('API Functions', () => {
     });
 
     it('should throw error when response is not ok', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         statusText: 'Bad Request',
       });
@@ -245,7 +245,7 @@ describe('API Functions', () => {
 
   describe('nudgeOpen', () => {
     it('should call the correct endpoint', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         statusText: 'OK',
       });
@@ -260,7 +260,7 @@ describe('API Functions', () => {
     });
 
     it('should throw error when response is not ok', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         statusText: 'Internal Server Error',
       });
@@ -269,7 +269,7 @@ describe('API Functions', () => {
     });
 
     it('should throw rate limit error when status is 429', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
@@ -281,7 +281,7 @@ describe('API Functions', () => {
 
   describe('nudgeClose', () => {
     it('should call the correct endpoint', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         statusText: 'OK',
       });
@@ -296,7 +296,7 @@ describe('API Functions', () => {
     });
 
     it('should throw error when response is not ok', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         statusText: 'Internal Server Error',
       });
@@ -305,7 +305,7 @@ describe('API Functions', () => {
     });
 
     it('should throw rate limit error when status is 429', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',

@@ -47,7 +47,6 @@ export const ValveGauge: React.FC<ValveGaugeProps> = ({ position, isActive }) =>
   const arcEndAngle = angle;
   
   // Background circle (full revolution)
-  const backgroundArc = describeArc(CENTER, CENTER, RADIUS, 0, 360);
   
   // Progress arc (0 to current position)
   // SVG arcs can't draw full circle, so we use 359.9 for full

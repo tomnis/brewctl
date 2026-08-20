@@ -1,0 +1,37 @@
+[Unit]
+Description=BrewCTL hardware service (Acaia scale + MotorKit valve)
+Documentation=https://github.com/tomnis/brewctl
+# The scale is BLE, so bluetooth must be up before we try to connect.
+After=bluetooth.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=__USER__
+WorkingDirectory=__SRC__
+
+# All configuration lives here, installed by deploy/pi/install.sh. Notably this
+# replaces the old `bash -lc` + ~/.profile arrangement, which sourced COLDBREW_*
+# names that no current code reads -- BREWCTL_IS_PROD would have defaulted to
+# false and the service would have silently driven MockScale/MockValve.
+EnvironmentFile=/etc/brewctl/hardware.env
+Environment=PYTHONPATH=__SRC__
+
+# `fastapi run`, not `fastapi dev`: dev starts a reload file-watcher, which is
+# pure overhead on a 416 MB Pi Zero 2 W.
+ExecStart=__VENV__/bin/fastapi run __SRC__/brewctl/main.py --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=5
+
+# If the process dies with the valve open, the watchdog on the next start cannot
+# help us -- position state is in-process. Returning the valve on stop is best
+# effort via the lifespan handler; give it time to finish.
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brewctl-hardware
+
+[Install]
+WantedBy=multi-user.target

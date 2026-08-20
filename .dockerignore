@@ -1,1 +1,24 @@
 node_modules
+frontend/dist
+
+# The in-tree Python venv. Without these the whole of backend/lib/python3.13
+# ends up in the build context.
+backend/bin
+backend/lib
+backend/lib64
+backend/include
+backend/.venv
+backend/pyvenv.cfg
+backend/build
+
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+.git
+.github
+.forgejo
+deploy
+*.md
+.env

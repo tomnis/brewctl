@@ -1,0 +1,297 @@
+# Test, build, smoke-test, and publish the api image.
+#
+# There is no registry. The image is streamed straight onto the deploy host with
+# `docker save | ssh docker load`, so the reference in deploy/nas/image.tag is a
+# registry-less local tag (`catacombs/brewctl:sha-...`, org prefix kept so images
+# from different repos on that daemon cannot collide) and the NAS must never be
+# asked to pull it -- image.tag pins an exact tag for that reason.
+#
+# Publishing is not deploying. This workflow only puts the image on the box;
+# promotion is a separate, deliberate commit that bumps the one line in
+# deploy/nas/image.tag (see deploy.yml). That keeps git the record of what is
+# running and makes rollback a `git revert` -- valid as long as the older image
+# is still loaded on the NAS (see the prune step below).
+#
+# Forgejo is the CI origin: push directly to the `forgejo` remote. A *pull*
+# mirror from GitHub would not work, because mirror syncs bypass the hooks that
+# create workflow runs.
+#
+# Repo config required:
+#   vars.DEPLOY_USER          ssh user on the NAS (needs docker socket access)
+#   vars.DEPLOY_HOST          192.168.0.69
+#   secrets.DEPLOY_SSH_KEY    private key, unencrypted
+#   secrets.DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan <host>`
+#
+# The runner needs a Docker daemon (DinD or a mounted socket).
+
+name: Build and publish
+
+# Every branch builds and publishes. That is safe because publishing is not
+# deploying: a branch image just sits in the NAS daemon until someone pins it,
+# and having it there is what makes testing a branch on the real box a one-line
+# image.tag edit rather than a build. The branch name is in the tag so those
+# images are identifiable, and only master/tag builds get the `bN` alias.
+#
+# paths-ignore keeps this off the deploy commit. A promotion is one line in
+# deploy/nas/image.tag, so rebuilding there is worse than wasteful: it would
+# publish a sha- tag for a commit whose image.tag pins the *previous* commit's
+# image, and race deploy.yml for the single-capacity runner on every deploy.
+# Anything that can change the image (Dockerfile, backend/, frontend/) is outside
+# these paths, so a commit touching both still builds.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths-ignore:
+      - 'deploy/**'
+      - '**.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Extra image tag to build and publish
+        required: false
+        default: ''
+
+env:
+  # Image name. Empty means "derive from the repository name" -- the common case
+  # of one image per repo needs no configuration.
+  #
+  # The full reference is assembled as <REGISTRY><owner>/<IMAGE>, so the owner
+  # (the Forgejo org) is part of every tag: `catacombs/brewctl:sha-...` rather than a
+  # bare `brewctl`, which would collide with any other org's image on a NAS
+  # daemon that holds images from several repos. Adding a registry later is then
+  # a one-line change here rather than an edit to every docker invocation.
+  IMAGE: ""
+  # Empty: images are loaded straight onto the deploy target, not pulled.
+  # Set to "example.registry/" -- with trailing slash -- if a registry lands.
+  REGISTRY: ""
+  DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+  # How many brewctl images to keep on the NAS after a publish. Rollback by
+  # `git revert` only works while the previous image is still there.
+  KEEP_IMAGES: 10
+
+jobs:
+  test:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner image ships python3 without ensurepip, so `python3 -m venv`
+      # fails ("you need to install the python3-venv package"). Install the venv
+      # package matching whatever python3 the image actually has, rather than
+      # hardcoding a version that changes out from under this when the runner
+      # image is updated.
+      #
+      # A venv is still worth it over `pip install --break-system-packages`: the
+      # runner is long-lived, and dumping deps into the system python leaks
+      # between builds of different branches.
+      - name: Ensure python venv support
+        run: |
+          if ! python3 -c 'import ensurepip' 2>/dev/null; then
+            pyver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+            apt-get update -qq
+            apt-get install -y -qq "python${pyver}-venv" || apt-get install -y -qq python3-venv
+          fi
+
+      # NOTE: this is the runner image's python, not the 3.13 the image runs on
+      # (see Dockerfile). Version-sensitive behaviour will not be caught here.
+      - name: Backend tests
+        run: |
+          cd backend
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements/dev.txt
+          .venv/bin/pytest tests
+
+      - name: Frontend tests and build
+        run: |
+          cd frontend
+          npm ci --no-audit
+          npm run test:run
+          npm run build
+
+      # The Pi is deployed by hand and never self-updates, so a contract bump
+      # that ships to the NAS without a matching push to the Pi will block
+      # brewing. Say so loudly rather than letting it be discovered at brew time.
+      - name: Warn on hardware contract change
+        run: |
+          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null \
+               | grep -q 'backend/src/brewctl/core/contract.py'; then
+            echo "::warning::hardware contract changed -- run 'make deploy-pi' or brews will be refused"
+          fi
+
+  publish:
+    runs-on: dind
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure ssh client
+        run: |
+          command -v ssh >/dev/null && exit 0
+          if command -v apk >/dev/null; then apk add --no-cache openssh-client
+          else apt-get update -qq && apt-get install -y -qq openssh-client; fi
+
+      - name: Determine tags
+        id: tag
+        run: |
+          # sha- is the tag image.tag pins: stable across re-runs and traceable
+          # back to a commit, and the one tag every build gets.
+          sha="sha-${GITHUB_SHA::12}"
+          tags="$sha"
+
+          case "$GITHUB_REF" in
+            # A release is referred to by its tag name.
+            refs/tags/*)
+              tags="$tags ${GITHUB_REF#refs/tags/} b${{ github.run_number }}" ;;
+            refs/heads/master)
+              # bN is the monotonic build number humans deploy by. Only master
+              # gets it -- a shared counter across branches would make `b41` mean
+              # nothing about what is in it.
+              tags="$tags b${{ github.run_number }}" ;;
+            *)
+              # Branch builds get a moving branch tag, so "whatever is latest on
+              # that branch" is pinnable without looking up a sha. Slugged:
+              # Docker tags allow only [A-Za-z0-9_.-], and slashes in branch
+              # names would otherwise read as registry path separators.
+              slug=$(printf '%s' "${GITHUB_REF#refs/heads/}" | tr -c 'A-Za-z0-9_.-' '-')
+              tags="$tags branch-${slug}" ;;
+          esac
+          [ -n "${{ inputs.tag }}" ] && tags="$tags ${{ inputs.tag }}"
+
+          # Default the image name to the repository name. Derived from
+          # GITHUB_REPOSITORY rather than the event payload so it resolves the
+          # same way on push and workflow_dispatch.
+          image="${IMAGE:-${GITHUB_REPOSITORY##*/}}"
+
+          # Fully-qualified repository, lowercased: Docker rejects uppercase in
+          # the repository portion of a reference, but Forgejo org names allow it.
+          repo="$(echo "${REGISTRY}${{ github.repository_owner }}/${image}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "primary=$sha"
+            echo "tags=$tags"
+            echo "image=$image"
+            echo "repo=$repo"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          args=""
+          for t in ${{ steps.tag.outputs.tags }}; do
+            args="$args -t ${{ steps.tag.outputs.repo }}:$t"
+          done
+          # Dockerfile at the repo root builds the frontend and bundles it into
+          # the api image, so the context is the whole repo.
+          docker build \
+            --label "org.opencontainers.image.title=${{ steps.tag.outputs.image }}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${{ steps.tag.outputs.primary }}" \
+            --label "org.opencontainers.image.created=${{ steps.tag.outputs.created }}" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.ref.name=${{ github.ref_name }}" \
+            --label "build.run_id=${{ github.run_id }}" \
+            --label "build.run_number=${{ github.run_number }}" \
+            $args .
+
+      - name: Smoke test the image
+        run: |
+          set -e
+          docker rm -f brewctl-smoke 2>/dev/null || true
+          # No hardware and no InfluxDB here: the api starts anyway and reports
+          # "degraded", which is enough to prove the image boots and serves.
+          #
+          # BREWCTL_HARDWARE_URL must still be *set* though -- it has no default,
+          # and api/server.py builds HttpScale at import time, so an unset value
+          # crashes the process on startup with
+          # `AttributeError: 'NoneType' object has no attribute 'rstrip'`.
+          # Port 9 (discard) is a valid URL that is reliably dead: the SSE
+          # listener runs on a background thread and just fails to connect,
+          # which is exactly the degraded state being tested.
+          docker run -d --name brewctl-smoke \
+            -e BREWCTL_MODE=api \
+            -e BREWCTL_IS_PROD=false \
+            -e BREWCTL_HARDWARE_URL=http://127.0.0.1:9 \
+            "${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}"
+
+          # The container is a sibling of this job (shared daemon), so probe from
+          # inside it rather than through a published port.
+          #
+          # /api/health, NOT "/" -- the api serves no root route, so "/" is a
+          # permanent 404 and would never pass.
+          probe='import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/api/health").status==200 else 1)'
+          ok=""
+          for _ in $(seq 1 30); do
+            if docker exec brewctl-smoke python -c "$probe" 2>/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "api did not become healthy"
+            docker logs brewctl-smoke
+            docker rm -f brewctl-smoke
+            exit 1
+          fi
+
+          # The frontend is baked into this image and served at /app. A build
+          # that silently shipped without the bundle looks perfectly healthy.
+          docker exec brewctl-smoke python -c \
+            'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/app/").status==200 else 1)'
+
+          docker rm -f brewctl-smoke
+
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Publish image
+        run: |
+          args=""
+          for t in ${{ steps.tag.outputs.tags }}; do
+            args="$args ${{ steps.tag.outputs.repo }}:$t"
+          done
+          # gzip -1: the link is a LAN, so CPU is the bottleneck, not bandwidth.
+          docker save $args \
+            | gzip -1 \
+            | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+                  "${DEPLOY_USER}@${DEPLOY_HOST}" 'gunzip | docker load'
+
+      # Old images accumulate on a box with a finite pool, and every branch publishes
+      # here, so this is load-bearing rather than tidiness. Keep the newest
+      # KEEP_IMAGES so a revert still has something to roll back to.
+      #
+      # The image the NAS is actually running can fall out of that window if
+      # enough branches publish. `docker rmi` refuses to remove an in-use image, so
+      # the running app is never broken by this -- the failure is swallowed.
+      #- name: Prune old images on the NAS
+      #  run: |
+      #    ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+      #        "${DEPLOY_USER}@${DEPLOY_HOST}" \
+      #        "docker images '${{ steps.tag.outputs.repo }}' --format '{{.ID}}' \
+      #           | awk '!seen[\$0]++' \
+      #           | tail -n +$((KEEP_IMAGES + 1)) \
+      #           | xargs -r docker rmi || true"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
+
+      - name: Summary
+        run: |
+          {
+            echo "Loaded on ${DEPLOY_HOST}:"
+            echo '```'
+            for t in ${{ steps.tag.outputs.tags }}; do echo "${{ steps.tag.outputs.repo }}:$t"; done
+            echo '```'
+            echo "To deploy: put this line in deploy/nas/image.tag and push:"
+            echo '```'
+            echo "${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}"
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
