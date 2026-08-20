@@ -127,7 +127,7 @@ SSE/WS URLs too.
 **Building is not deploying.** `build.yml` runs tests, builds the root `Dockerfile`, smoke-tests the
 image (`/api/health` and `/app/`), and streams it onto the NAS with `docker save | ssh docker load`
 — there is no registry, so the deployed reference is a registry-less local tag
-(`tomas/brewctl:sha-<short12>`). Every branch publishes an image; it just sits on the daemon.
+(`catacombs/brewctl:sha-<short12>`). Every branch publishes an image; it just sits on the daemon.
 
 The manifest is split in two: `deploy/nas/app.yaml` is the *shape* of the deployment and carries an
 `@IMAGE@` placeholder, while `deploy/nas/image.tag` holds the one pinned reference and is the whole

@@ -2,7 +2,7 @@
 #
 # There is no registry. The image is streamed straight onto the deploy host with
 # `docker save | ssh docker load`, so the reference in deploy/nas/image.tag is a
-# registry-less local tag (`tomas/brewctl:sha-...`, org prefix kept so images
+# registry-less local tag (`catacombs/brewctl:sha-...`, org prefix kept so images
 # from different repos on that daemon cannot collide) and the NAS must never be
 # asked to pull it -- image.tag pins an exact tag for that reason.
 #
@@ -58,7 +58,7 @@ env:
   # of one image per repo needs no configuration.
   #
   # The full reference is assembled as <REGISTRY><owner>/<IMAGE>, so the owner
-  # (the Forgejo org) is part of every tag: `tomas/brewctl:sha-...` rather than a
+  # (the Forgejo org) is part of every tag: `catacombs/brewctl:sha-...` rather than a
   # bare `brewctl`, which would collide with any other org's image on a NAS
   # daemon that holds images from several repos. Adding a registry later is then
   # a one-line change here rather than an edit to every docker invocation.

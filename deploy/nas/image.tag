@@ -7,10 +7,10 @@
 #
 # Pinned, never :latest, and never a moving branch- tag here: a moving tag makes
 # "what is running" unanswerable and rollback impossible. CI loads
-# tomas/brewctl:sha-<short12> onto the NAS for every build and prints the exact
+# catacombs/brewctl:sha-<short12> onto the NAS for every build and prints the exact
 # line to paste in its run summary.
 #
 # Comments and blank lines are ignored; the first real line is the reference.
 # apply.sh substitutes it for @IMAGE@ in app.yaml before the PUT.
 
-tomas/brewctl:sha-REPLACE_ME
+catacombs/brewctl:sha-REPLACE_ME

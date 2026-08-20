@@ -1,3 +1,19 @@
+> **SUPERSEDED — historical design doc, not the current architecture.**
+>
+> This plan describes a Forgejo *registry* approach: build, `docker push` to
+> `forgejo.<host>/…`, and have TrueNAS pull. That was abandoned. The registry is
+> HTTP-only, which meant every Docker daemon on the network needed an
+> `insecure-registries` entry maintained by a Post Init script that restarts the
+> daemon (stopping every container on the box) and that a TrueNAS upgrade could
+> silently revert. Streaming the image straight to the deploy host with
+> `docker save | ssh docker load` removes the registry, the daemon config, and
+> the pull step in exchange for one `ssh` key.
+>
+> Consequences: `FORGEJO_HOST` and `FORGEJO_TOKEN` referenced below are **not**
+> used by any workflow. The live design is `.forgejo/workflows/build.yml`
+> (publish) and `deploy.yml` (promote), with `deploy/nas/image.tag` as the
+> pinned reference. Kept for the reasoning, not as instructions.
+
 # Plan: GitOps CI Pipeline for Brewctl
 
 ## Context

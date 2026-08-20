@@ -221,21 +221,56 @@ The Pi is a Pi Zero 2 W with 416 MB of RAM and no Docker. Deployment is a git
 push to a bare repo, whose `post-receive` hook refreshes the venv and restarts
 the unit.
 
-First-time setup, on the Pi:
+OS prerequisites, none of which `install.sh` installs: `git`, `python3-venv`,
+`python3-dev`, `libglib2.0-dev` (bluepy builds against it), a running `bluez`,
+I²C enabled through `raspi-config`, and the service user in the `i2c`,
+`bluetooth`, and `sudo` groups. `install.sh` hard-fails unless `pyacaia`,
+`adafruit_motorkit`, and `adafruit_motor` all import, so a missing one surfaces
+at install time rather than as silent mock mode later.
+
+Check them all at once first — `deploy/pi/preflight.sh` surveys the box read-only
+(installs nothing, restarts nothing, safe to run mid-brew) and prints the `apt`
+line for whatever is missing. It exits non-zero if anything would actually block
+the install, so it works as a gate.
+
+Before the Pi has the code, pipe it over stdin rather than copying it there:
 
 ```bash
-git clone <this repo> ~/coldbrewer          # or push to ~/coldbrewer.git
-cp deploy/pi/post-receive ~/coldbrewer.git/hooks/ && chmod +x ~/coldbrewer.git/hooks/post-receive
-~/coldbrewer/deploy/pi/install.sh
-sudoedit /etc/brewctl/hardware.env          # set BREWCTL_SCALE_MAC_ADDRESS
+ssh tomas@coldbrewer.local 'bash -s' < deploy/pi/preflight.sh   # from a checkout
+~/coldbrewer/deploy/pi/preflight.sh                             # on the Pi, once it has the tree
+```
+
+First-time setup, on the Pi, **in this order**:
+
+```bash
+git clone <this repo> ~/coldbrewer           # seeds the work tree for the first install
+~/coldbrewer/deploy/pi/install.sh            # unit + /etc/brewctl/hardware.env + sudoers
+
+git init --bare ~/coldbrewer.git
+git -C ~/coldbrewer.git symbolic-ref HEAD refs/heads/master
+cp ~/coldbrewer/deploy/pi/post-receive ~/coldbrewer.git/hooks/
+chmod +x ~/coldbrewer.git/hooks/post-receive
+
+sudoedit /etc/brewctl/hardware.env           # confirm BREWCTL_SCALE_MAC_ADDRESS
 sudo systemctl restart brewctl-hardware
 ```
 
+The order is load-bearing. The hook ends in `install.sh --deps-only`, which
+restarts the unit with `sudo -n` — that needs the sudoers rule only a *full*
+`install.sh` writes. Install the hook first and the very first `make deploy-pi`
+fails.
+
+`post-receive` checks out the bare repo's `HEAD`, not the ref you pushed, so set
+`HEAD` to whatever branch `make deploy-pi` sends or the wrong tree deploys.
+
 `install.sh` creates the venv from `requirements/hardware.txt`, verifies the
 device libraries import, installs `brewctl-hardware.service`, and disables the
-old `coldbrew-backend`/`coldbrew-frontend` units.
+old `coldbrew-backend`/`coldbrew-frontend` units. It never overwrites an existing
+`/etc/brewctl/hardware.env`.
 
-Thereafter, `make deploy-pi` (a `git push`) is the whole deploy.
+Thereafter, `make deploy-pi` (a `git push`) is the whole deploy. Changes to the
+unit, the env file, or sudoers still need a full `install.sh` run on the Pi —
+`--deps-only` deliberately does not touch `/etc`.
 
 **Always confirm it is driving real hardware.** `BREWCTL_IS_PROD` defaults to
 false, and when it is not exactly `true` the service starts happily on
@@ -281,17 +316,29 @@ UI at `http://<nas>:8000/app`, API at `http://<nas>:8000/api`.
 
 One-time bootstrap, in order:
 
-1. Create the app once in the **Custom App** UI — `PUT` is update, not create.
-2. Put the InfluxDB token at the `secrets:` path in `app.yaml` (`root:root 0400`).
-   The api reads it via `BREWCTL_INFLUXDB_TOKEN_FILE` and refuses to start without
-   it, so it never appears in the manifest or in `docker inspect`.
-3. Run `deploy/nas/post-init.py` and register it as a TrueNAS **Post Init** script.
-   The Forgejo registry is HTTP-only, so Docker needs it in `insecure-registries`,
-   and an upgrade can rewrite `daemon.json`. It restarts the Docker daemon, which
-   stops every container on the box — maintenance window, not mid-brew.
+1. Set the repo config in Forgejo — `vars.DEPLOY_USER`, `vars.DEPLOY_HOST`,
+   `vars.TRUENAS_URL`, `vars.BREWCTL_API_URL`, `secrets.DEPLOY_SSH_KEY`,
+   `secrets.DEPLOY_KNOWN_HOSTS`, `secrets.TRUENAS_API_KEY` (APPS_WRITE). The
+   deploy user must be in the `docker` group on the NAS; check with
+   `ssh -o BatchMode=yes $DEPLOY_USER@$DEPLOY_HOST 'docker images && command -v gunzip'`.
+2. Put the InfluxDB token at the `secrets:` path in `app.yaml`, non-empty and
+   `root:root 0400`. The api reads it via `BREWCTL_INFLUXDB_TOKEN_FILE` and
+   refuses to start without it, so it never appears in the manifest or in
+   `docker inspect`. Confirm the org and bucket exist and that the token can write
+   to them — a bad token yields `degraded`, not a failure.
+3. Push to `forgejo` and let CI publish, then confirm the image reached the box:
+   `ssh $DEPLOY_USER@$DEPLOY_HOST docker images catacombs/brewctl`. With
+   `pull_policy: never` there is nothing to fall back on.
+4. Create the app once in the **Custom App** UI — `PUT` is update, not create.
+   Paste the output of `apply.sh --render --image <the published ref>`, and name
+   the app `brewctl-api` (that name is the id the TrueNAS API addresses).
+5. Put the same reference in `image.tag` and push **to `master`** — the deploy
+   workflow only triggers there. That commit is what makes git the record.
 
 Address the Pi by **IP**, not `coldbrewer.local` — mDNS does not resolve inside a
-container. Give the Pi a DHCP reservation.
+container. Give the Pi a DHCP reservation. The same caveat applies to
+`BREWCTL_INFLUXDB_URL`: a `.local` name only works there if it is real DNS, so
+check it resolves from *inside* a container on the NAS.
 
 `apply.sh` refuses to deploy while a brew is `brewing`, `paused`, or `error` (all
 three still drive the valve), since a redeploy restarts the api and destroys the

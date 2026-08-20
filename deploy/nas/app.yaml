@@ -64,10 +64,15 @@ services:
       BREWCTL_TARGET_WEIGHT_GRAMS: "1337"
       BREWCTL_VESSEL_WEIGHT_GRAMS: "229"
 
-      # Empty on purpose. The api serves the UI itself at /app, so requests are
-      # same-origin and CORS never applies. Leaving this unset would fall back to
-      # the dev default (http://localhost:5173) and add it to production origins.
+      # Both empty on purpose, and both are required. The api serves the UI itself
+      # at /app, so requests are same-origin and CORS never applies.
+      #
+      # api/server.py composes the allow list as
+      # BREWCTL_CORS_ORIGINS + [BREWCTL_FRONTEND_ORIGIN]; core/config.py defaults
+      # the latter to http://localhost:5173. Clearing only the first still leaves
+      # localhost advertised as an allowed origin with allow_credentials=True.
       BREWCTL_CORS_ORIGINS: ""
+      BREWCTL_FRONTEND_ORIGIN: ""
 
     secrets:
       - influxdb_token
