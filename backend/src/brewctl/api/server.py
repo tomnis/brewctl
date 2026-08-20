@@ -147,14 +147,24 @@ def get_scale_status() -> ScaleStatus:
     """
     Reads status from the scale. Used for both a specific endpoint, and polling+writing scale data as part of the event loop.
     """
-    # Reuse existing scale instance - SSE listener handles reconnection automatically
+    # Read-only: never connect from here. This is on the /api/health path, and
+    # HttpScale.connect() makes a blocking 10s POST to the Pi, which then blocks
+    # attempting BLE. With the scale powered off that meant:
+    #
+    #   - /api/health taking up to 10s, longer than the container healthcheck's
+    #     5s timeout, so a perfectly healthy api was reported unhealthy;
+    #   - collect_scale_data_task (every 0.5s during a brew) making that blocking
+    #     call from inside the event loop, stalling brew_step_task and the valve
+    #     heartbeat with it.
+    #
+    # Connecting belongs to the two places that actually want the device:
+    # start_brew(), which uses reconnect_with_backoff() and fails with a 503, and
+    # the Pi itself, which owns physical reconnection (BREWCTL_SCALE_RECONNECT_*).
     global scale
     if scale is None:
         scale = HttpScale(BREWCTL_HARDWARE_URL)
-    if not scale.connected:
-        scale.connect()  # Uses existing instance's SSE listener
 
-    if scale is not None and scale.connected:
+    if scale.connected:
         weight = scale.get_weight()
         battery_pct = scale.get_battery_percentage()
         units = scale.get_units()

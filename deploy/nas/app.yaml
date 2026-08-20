@@ -45,6 +45,18 @@ services:
     ports:
       - "8000:8000"
 
+    # Opts this container in to Traefik's Docker provider. The published port
+    # above stays: it is what apply.sh's health gate and the container healthcheck
+    # both probe, and losing it would make a deploy unverifiable.
+    labels:
+      - traefik.enable=true
+
+    # Traefik has to share a network with this container to reach it -- the
+    # label alone only opts in to discovery, and a router pointing at an
+    # unreachable backend is a 502, not a startup error.
+    networks:
+      - catacombs
+
     environment:
       BREWCTL_MODE: api
       BREWCTL_IS_PROD: "true"
@@ -89,6 +101,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+networks:
+  catacombs:
+    # Created outside this file and shared with Traefik. external: true means
+    # compose attaches to it rather than creating its own -- and fails loudly if
+    # it is absent, rather than silently making a second, isolated network of
+    # the same name.
+    external: true
 
 secrets:
   influxdb_token:
