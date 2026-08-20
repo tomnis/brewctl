@@ -9,7 +9,7 @@ export const defaultMockContext: BrewContextShape = {
   brewError: null,
   isFlipped: false,
   fetchBrewInProgress: async () => {},
-  stopPolling: () => {},
+  stopConnection: () => {},
   toggleFlip: () => {},
   handlePause: async () => {},
   handleResume: async () => {},
@@ -59,4 +59,3 @@ export function render(
 
 // Re-export testing library utilities
 export * from '@testing-library/react';
-export { default as userEvent } from '@testing-library/user-event';

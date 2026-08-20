@@ -1,0 +1,60 @@
+# Promote: apply deploy/nas/app.yaml to the TrueNAS custom app.
+#
+# Deploying is a deliberate act -- editing the one line in deploy/nas/image.tag
+# and pushing. app.yaml holds the shape of the deployment and changes rarely;
+# image.tag holds what is running and is the whole promotion.
+# That keeps git the record of what is running, and makes rollback `git revert`.
+# Building an image does not deploy it (see build.yml), and the two workflows do
+# not overlap: build.yml has a matching paths-ignore for deploy/**, so a
+# promotion commit (image.tag alone) runs only this one. If a commit ever changes
+# both code and deploy/**, both run -- and on a single-capacity runner they
+# serialize in unspecified order, so the manifest can be applied before its image
+# exists. Keep promotions as their own commit.
+#
+# All the logic lives in deploy/nas/apply.sh, not here: applying is one idempotent
+# PUT of one file, so switching from this CI trigger to a systemd timer on the NAS
+# (pull-based) later is a change of trigger, not of architecture.
+#
+# Repo config required:
+#   vars.TRUENAS_URL        https://192.168.0.69
+#   vars.BREWCTL_API_URL    http://192.168.0.69:8000
+#   secrets.TRUENAS_API_KEY API key with APPS_WRITE
+#
+# SECURITY: APPS_WRITE cannot be scoped to a single app and is effectively root on
+# the NAS -- it can create an app with privileged: true. It is acceptable here
+# only because the runner is on that same host and already holds the Docker
+# socket. If CI ever moves off this box, switch to a pull-based reconciler rather
+# than exporting this key.
+
+name: Deploy to TrueNAS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      # image.tag is the promotion: a deploy is a one-line change to that file
+      # and nothing else. app.yaml and apply.sh are here too because a change to
+      # the deployment's shape, or to how it is applied, also needs applying.
+      - 'deploy/nas/image.tag'
+      - 'deploy/nas/app.yaml'
+      - 'deploy/nas/apply.sh'
+
+jobs:
+  deploy:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq jq)
+
+      # apply.sh refuses while a brew is active (a redeploy would destroy it), and
+      # fails open if the api is unreachable so a crashlooping api can still be
+      # fixed. It waits for the app to leave DEPLOYING and then for the api's own
+      # /api/health -- the app object exposes no container health.
+      - name: Apply manifest
+        env:
+          TRUENAS_URL: ${{ vars.TRUENAS_URL }}
+          TRUENAS_API_KEY: ${{ secrets.TRUENAS_API_KEY }}
+          BREWCTL_API_URL: ${{ vars.BREWCTL_API_URL }}
+        run: ./deploy/nas/apply.sh deploy/nas/app.yaml

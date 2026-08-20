@@ -7,7 +7,11 @@ export default function CancelBrew() {
 
   const cancelBrew = async () => {
     try {
-      await fetch(`${apiUrl}/brew/kill`, { method: "POST" });
+      const response = await fetch(`${apiUrl}/brew/kill`, { method: "POST" });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("cancel failed:", response.status, errorText);
+      }
     } catch (e) {
       console.error("cancel failed", e);
     } finally {
