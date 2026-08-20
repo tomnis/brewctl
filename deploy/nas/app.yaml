@@ -29,7 +29,9 @@
 # survives rendering.
 
 services:
-  api:
+  # The service name is load-bearing: Traefik's defaultRule on this host builds
+  # the hostname from it, so this key is what makes brewctl.catacombs.local route.
+  brewctl:
     # Rendered from deploy/nas/image.tag, which is where deploys happen and where
     # the pinning rationale lives. Nothing to edit here to deploy.
     #
@@ -48,6 +50,12 @@ services:
     # Opts this container in to Traefik's Docker provider. The published port
     # above stays: it is what apply.sh's health gate and the container healthcheck
     # both probe, and losing it would make a deploy unverifiable.
+    # enable=true is the whole opt-in. Traefik's defaultRule on this host is
+    #   HostRegexp(`^{{ index .Labels "com.docker.compose.service" }}.catacombs.(lan|local)$`)
+    # so the route is derived from the *compose service name* above -- which is
+    # why that key is `brewctl` and not `api`. Naming it `api` produced a router
+    # for api.catacombs.local and a Traefik 404 on brewctl.catacombs.local, which
+    # is indistinguishable from an application 404.
     labels:
       - traefik.enable=true
 
