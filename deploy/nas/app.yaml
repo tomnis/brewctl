@@ -1,7 +1,7 @@
 # brewctl on TrueNAS -- the deployment manifest.
 #
 # This file plus deploy/nas/image.tag IS the desired state. `PUT
-# /api/v2.0/app/id/brewctl-api` takes a custom app's entire compose config as
+# /api/v2.0/app/id/brewctl` takes a custom app's entire compose config as
 # `custom_compose_config_string`, so deploy/nas/apply.sh posts this file with
 # exactly one substitution made (@IMAGE@) and nothing else.
 #
@@ -39,7 +39,7 @@ services:
     # Docker Hub that can never succeed, instead of failing immediately.
     image: "@IMAGE@"
     pull_policy: never
-    container_name: brewctl-api
+    container_name: brewctl
     restart: unless-stopped
 
     ports:

@@ -331,7 +331,8 @@ One-time bootstrap, in order:
    `pull_policy: never` there is nothing to fall back on.
 4. Create the app once in the **Custom App** UI — `PUT` is update, not create.
    Paste the output of `apply.sh --render --image <the published ref>`, and name
-   the app `brewctl-api` (that name is the id the TrueNAS API addresses).
+   the app `brewctl` (that name is the id the TrueNAS API addresses; override
+   with `TRUENAS_APP` if it is ever named something else).
 5. Put the same reference in `image.tag` and push **to `master`** — the deploy
    workflow only triggers there. That commit is what makes git the record.
 

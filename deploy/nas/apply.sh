@@ -18,7 +18,8 @@
 # env:
 #   TRUENAS_URL       https://192.168.0.69
 #   TRUENAS_API_KEY   API key with APPS_WRITE
-#   TRUENAS_APP       app name (default brewctl-api)
+#   TRUENAS_APP       app name (default brewctl). This is the app's id in the
+#                     TrueNAS API -- whatever it was named in the Custom App UI.
 #   BREWCTL_API_URL   where the running api is reachable, for the brew preflight
 #                     (default http://192.168.0.69:8000)
 #
@@ -55,7 +56,7 @@ while (( $# )); do
     shift
 done
 
-TRUENAS_APP="${TRUENAS_APP:-brewctl-api}"
+TRUENAS_APP="${TRUENAS_APP:-brewctl}"
 BREWCTL_API_URL="${BREWCTL_API_URL:-http://192.168.0.69:8000}"
 DEPLOY_TIMEOUT_SECONDS="${DEPLOY_TIMEOUT_SECONDS:-180}"
 
