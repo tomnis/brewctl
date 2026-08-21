@@ -7,7 +7,7 @@ these names should not be star-exported into half the codebase. There is also no
 env lookup here -- these are literals, so there is no import-time config hazard.
 
 The two services deploy independently and on different schedules. The api runs in
-Docker on the NAS and updates automatically; the hardware service runs bare metal
+Docker on the control host and updates automatically; the hardware service runs bare metal
 on the Pi and only changes when someone pushes to it by hand. The Pi can therefore
 lag the api indefinitely, and "forgot to push to the Pi" is the expected failure
 rather than an edge case. This version is what lets the api notice.

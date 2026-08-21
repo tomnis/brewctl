@@ -234,8 +234,8 @@ Also a `server.py` test that `run_step_with_heartbeat` calls `valve.heartbeat` a
 ### 8. Deployment config
 
 Add `BREWCTL_LLM_BASE_URL` / `BREWCTL_LLM_MODEL` to the api service env in `docker-compose.yml`,
-`.env`, and the NAS deployment under `deploy/nas/`. The api container must be able to reach the
-Ollama host — verify network reachability from inside the container, not just from the NAS host.
+`.env`, and the control deployment under `deploy/control/`. The api container must be able to reach the
+Ollama host — verify network reachability from inside the container, not just from the control host.
 
 ## Verification
 

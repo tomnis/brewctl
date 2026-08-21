@@ -44,7 +44,7 @@ services:
       # the container would never report healthy.
       test:
         - CMD-SHELL
-        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""
+        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)\""
       interval: 30s
       timeout: 5s
       retries: 3

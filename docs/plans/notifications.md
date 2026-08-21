@@ -69,7 +69,7 @@ otherwise silent.
 - `backend/src/brewctl/api/server.py` — emit at complete, error, near-target
 - `backend/src/brewctl/hardware/server.py` — expose watchdog trip in the valve status payload
 - `backend/src/brewctl/api/http_valve.py` — cache and expose it
-- `docker-compose.yml`, `deploy/pi/hardware.env.example` — document the vars
+- `docker-compose.yml`, `deploy/device/hardware.env.example` — document the vars
 
 ## Testing
 

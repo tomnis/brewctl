@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Apply deploy/nas/app.yaml to the TrueNAS custom app.
+# Apply deploy/control/app.yaml to the custom app.
 #
-#   ./deploy/nas/apply.sh deploy/nas/app.yaml [--force] [--render] [--image REF]
+#   ./deploy/control/apply.sh deploy/control/app.yaml [--force] [--render] [--image REF]
 #
 #   --force        deploy even during an active brew, or when brew state is unknown
 #   --render       print the rendered manifest and exit; no network calls
@@ -16,7 +16,7 @@
 # the deploy workflow trigger on exactly that file.
 #
 # env:
-#   TRUENAS_URL       https://192.168.0.69
+#   TRUENAS_URL
 #   TRUENAS_API_KEY   API key with APPS_WRITE
 #   TRUENAS_APP       app name (default brewctl). This is the app's id in the
 #                     TrueNAS API -- whatever it was named in the Custom App UI.
@@ -25,7 +25,7 @@
 #
 # The deploy logic lives here rather than in workflow YAML on purpose: applying is
 # one idempotent PUT of one file, so whether it is invoked by CI (push) or by a
-# systemd timer on the NAS (pull) is a ~10 line decision, not an architecture.
+# systemd timer on the control host (pull) is a ~10 line decision, not an architecture.
 #
 # WARNING: this replaces the app's ENTIRE config. Anything set through the TrueNAS
 # UI that app.yaml does not represent is wiped. Before the first run, diff:
@@ -75,7 +75,7 @@ log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 # ------------------------------------------------------------------ render ---
 # The manifest is the shape of the deployment; image.tag is the deploy. Rendering
 # happens here rather than in the workflow so that `--render` reproduces exactly
-# what CI would PUT, and so a local `make deploy-nas` and CI cannot diverge.
+# what CI would PUT, and so a local `make deploy-control` and CI cannot diverge.
 
 # Strip comments and blank lines; the first surviving line is the reference.
 read_image_tag() {
@@ -228,7 +228,7 @@ while (( SECONDS < deadline )); do
             # Surfaced rather than fatal: the Pi is deployed by hand and may
             # simply not have been pushed yet. Brews will be refused until it is.
             if [[ "$(printf '%s' "$health" | jq -r '.hardware.compatible // "unknown"')" != "true" ]]; then
-                printf '\033[1;33mwarning:\033[0m hardware contract mismatch -- run `make deploy-pi`\n' >&2
+                printf '\033[1;33mwarning:\033[0m hardware contract mismatch -- run `make deploy-device`\n' >&2
             fi
             exit 0
         fi

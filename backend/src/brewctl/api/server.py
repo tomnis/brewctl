@@ -175,6 +175,25 @@ def get_scale_status() -> ScaleStatus:
         return ScaleStatus(connected=False, weight=None, units=None, battery_pct=None)
 
 
+def get_influxdb_health() -> dict:
+    """
+    Report InfluxDB connectivity for the health endpoints.
+
+    InfluxDB is a non-fatal dependency: a brew runs off the in-process WeightBuffer and
+    only falls back to Influx derivative queries. This must never hang -- see the short
+    health_timeout on InfluxDBTimeSeries.
+    """
+    try:
+        # ping() returns False on failure rather than raising, so the return value is
+        # the signal; the except is only for the other failure modes (bad config, etc).
+        if time_series.healthcheck():
+            return {"connected": True, "error": None}
+        return {"connected": False, "error": "influxdb ping failed"}
+    except Exception as e:
+        logger.error(f"Error checking InfluxDB health: {e}")
+        return {"connected": False, "error": str(e)}
+
+
 def get_component_health() -> dict:
     """
     Get health status of all components (scale, valve, influxdb).
@@ -210,12 +229,7 @@ def get_component_health() -> dict:
         logger.error(f"Error checking valve health: {e}")
 
     # Check InfluxDB connectivity
-    influxdb_health = {"connected": True, "error": None}
-    try:
-        time_series.healthcheck()
-    except Exception as e:
-        influxdb_health = {"connected": False, "error": str(e)}
-        logger.error(f"Error checking InfluxDB health: {e}")
+    influxdb_health = get_influxdb_health()
 
     return {
         "scale": scale_health,
@@ -272,13 +286,7 @@ def health_check():
         logger.error(f"Error checking valve health: {e}")
 
     # Check InfluxDB connectivity
-    influxdb_health = {"connected": True, "error": None}
-    try:
-        # Try a simple query to check connectivity
-        time_series.healthcheck()
-    except Exception as e:
-        influxdb_health = {"connected": False, "error": str(e)}
-        logger.error(f"Error checking InfluxDB health: {e}")
+    influxdb_health = get_influxdb_health()
 
     # Check brew status
     brew_health = {
@@ -299,22 +307,27 @@ def health_check():
     # is powered off.
     hardware_compat = check_hardware_compatibility()
 
-    issues = []
+    # InfluxDB is deliberately non-fatal: a brew drives the valve off the in-process
+    # WeightBuffer and only falls back to Influx derivative queries. It can degrade the
+    # reported status but must never reach UNHEALTHY, which is what apply.sh's deploy
+    # gate refuses (it accepts healthy or degraded). Everything else is critical.
+    critical_issues = []
     if not scale_health["connected"]:
-        issues.append("scale not connected")
+        critical_issues.append("scale not connected")
     if not valve_health["available"]:
-        issues.append("valve not available")
-    if not influxdb_health["connected"]:
-        issues.append("influxdb not connected")
+        critical_issues.append("valve not available")
     if not hardware_compat["compatible"]:
-        issues.append("hardware contract mismatch")
+        critical_issues.append("hardware contract mismatch")
 
-    if len(issues) == 0:
+    if len(critical_issues) == 0:
         overall_status = HealthStatus.HEALTHY
-    elif len(issues) <= 2:
+    elif len(critical_issues) <= 2:
         overall_status = HealthStatus.DEGRADED
     else:
         overall_status = HealthStatus.UNHEALTHY
+
+    if not influxdb_health["connected"] and overall_status == HealthStatus.HEALTHY:
+        overall_status = HealthStatus.DEGRADED
 
     return HealthResponse(
         status=overall_status,
@@ -563,7 +576,7 @@ async def start_brew(req: StartBrewRequest | None = None):
                 "message": (
                     f"Hardware service speaks contract v{compat['hardware_api_version']}, "
                     f"this api requires v{MIN_HARDWARE_API_VERSION}. "
-                    "Push the latest code to the Pi (make deploy-pi)."
+                    "Push the latest code to the Pi (make deploy-device)."
                 ),
                 **compat,
             },
@@ -853,8 +866,10 @@ async def websocket_health(websocket: WebSocket):
 
     try:
         while True:
-            # Get component health status
-            health = get_component_health()
+            # Get component health status. Offloaded: get_component_health() makes a
+            # blocking InfluxDB ping, and running it inline here stalls the whole event
+            # loop -- every SSE/WS client plus a running brew's step loop and heartbeat.
+            health = await asyncio.to_thread(get_component_health)
 
             # Add timestamp
             health["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -912,8 +927,10 @@ async def sse_health_generator() -> AsyncGenerator[str, None]:
     """
     try:
         while True:
-            # Get component health status
-            health = get_component_health()
+            # Get component health status. Offloaded: get_component_health() makes a
+            # blocking InfluxDB ping, and running it inline here stalls the whole event
+            # loop -- every SSE/WS client plus a running brew's step loop and heartbeat.
+            health = await asyncio.to_thread(get_component_health)
 
             # Add timestamp
             health["timestamp"] = datetime.now(timezone.utc).isoformat()

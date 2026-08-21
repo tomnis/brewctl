@@ -7,9 +7,28 @@ from ..core.log import logger
 # These settings are only needed by hardware services running on Raspberry Pi
 
 # Scale configuration
-BREWCTL_SCALE_MAC_ADDRESS = os.environ.get('BREWCTL_SCALE_MAC_ADDRESS', '')
+# The MAC shipped in deploy/device/hardware.env.example. install.sh copies that file
+# verbatim on a fresh install, so this exact value reaching a running service means
+# nobody edited it -- treat it as unset rather than dialling a nonexistent device.
+BREWCTL_SCALE_MAC_PLACEHOLDER = 'AA:BB:CC:DD:EE:FF'
+BREWCTL_SCALE_MAC_ADDRESS = os.environ.get('BREWCTL_SCALE_MAC_ADDRESS', '').strip()
+if BREWCTL_SCALE_MAC_ADDRESS.upper() == BREWCTL_SCALE_MAC_PLACEHOLDER:
+    BREWCTL_SCALE_MAC_ADDRESS = ''
+
 if BREWCTL_SCALE_MAC_ADDRESS:
     logger.info(f"BREWCTL_SCALE_MAC_ADDRESS = {BREWCTL_SCALE_MAC_ADDRESS}")
+elif os.environ.get('BREWCTL_IS_PROD', 'false') == 'true':
+    # Fail at startup, not at the first connect attempt. create_scale() gates on
+    # BREWCTL_IS_PROD alone, so an unset or unedited MAC would otherwise build a
+    # LunarScale that can never connect -- the service comes up, /health reports
+    # on a scale that was never going to work, and the cause is buried in a BLE
+    # timeout. Same reasoning as the InfluxDB token check in api/config.py.
+    raise ValueError(
+        "BREWCTL_IS_PROD=true but BREWCTL_SCALE_MAC_ADDRESS is unset or still the "
+        f"{BREWCTL_SCALE_MAC_PLACEHOLDER} placeholder from hardware.env.example. "
+        "Set the real scale MAC in /etc/brewctl/hardware.env "
+        "(find it with: bluetoothctl scan on)."
+    )
 else:
     logger.warning("BREWCTL_SCALE_MAC_ADDRESS not set - using mock scale")
 
