@@ -98,3 +98,21 @@ if not BREWCTL_HARDWARE_URL:
         f"BREWCTL_HARDWARE_URL not set - defaulting to {BREWCTL_HARDWARE_URL}"
     )
 logger.info(f"BREWCTL_HARDWARE_URL = {BREWCTL_HARDWARE_URL}")
+
+# LLM configuration (AIBrewStrategy)
+#
+# Any OpenAI-compatible chat-completions server works; the default is a local
+# Ollama. Swapping the backing service -- llama.cpp, IPEX-LLM, a hosted
+# provider -- is a change to this one variable and nothing else.
+BREWCTL_LLM_BASE_URL = os.environ.get("BREWCTL_LLM_BASE_URL", "http://localhost:11434")
+logger.info(f"BREWCTL_LLM_BASE_URL = {BREWCTL_LLM_BASE_URL}")
+
+BREWCTL_LLM_MODEL = os.environ.get("BREWCTL_LLM_MODEL", "llama3.2:3b")
+logger.info(f"BREWCTL_LLM_MODEL = {BREWCTL_LLM_MODEL}")
+
+BREWCTL_LLM_TIMEOUT_SECONDS = float(os.environ.get("BREWCTL_LLM_TIMEOUT_SECONDS", "15.0"))
+logger.info(f"BREWCTL_LLM_TIMEOUT_SECONDS = {BREWCTL_LLM_TIMEOUT_SECONDS}")
+
+# Unused by Ollama, which does not authenticate. Present so the strategy can
+# also point at a hosted provider. Never logged.
+BREWCTL_LLM_API_KEY = os.environ.get("BREWCTL_LLM_API_KEY", "")

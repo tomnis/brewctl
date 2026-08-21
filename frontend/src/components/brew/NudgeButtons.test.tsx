@@ -23,7 +23,8 @@ vi.mock('@chakra-ui/react', () => ({
 
 // Mock the constants module
 vi.mock('./constants', () => ({
-  wsUrl: vi.fn(() => 'ws://localhost:8000'),
+  sseUrl: vi.fn(() => 'http://localhost:8000/sse/brew/status'),
+  healthSseUrl: vi.fn(() => 'http://localhost:8000/sse/health'),
 }));
 
 // Mock the brewService module

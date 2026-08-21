@@ -8,6 +8,8 @@ import FlipCard from "./brew/FlipCard";
 import { ValveGauge } from "./brew/ValveGauge";
 import { TrendChart } from "./brew/TrendChart";
 import NudgeButtons from "./brew/NudgeButtons";
+import SwitchStrategyControl from "./brew/SwitchStrategyControl";
+import { formatProgressBar } from "./brew/progress";
 
 function formatTimeRemaining(seconds: number | null): string {
   if (seconds === null || seconds < 0) return "null";
@@ -46,13 +48,6 @@ function formatStartedTime(timeStarted: string | undefined): string {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 }
 
-function formatProgressBar(current: number, target: number): string {
-  const percent = Math.min(100, Math.max(0, (current / target) * 100));
-  const filled = Math.round(percent / 5); // 20 chars = 5% each
-  const empty = 20 - filled;
-  const bar = "█".repeat(filled) + "░".repeat(empty);
-  return `[${bar}] ${percent.toFixed(0)}%`;
-}
 
 export default function Brew() {
   return (
@@ -86,6 +81,10 @@ function BrewInner() {
   const flowRate = brewInProgress?.current_flow_rate ? parseFloat(brewInProgress.current_flow_rate).toFixed(3) + " g/s" : "null";
   const weight = brewInProgress?.current_weight ? parseFloat(brewInProgress.current_weight).toFixed(1) + " g" : "null";
   const targetWeight = brewInProgress?.target_weight ? parseFloat(brewInProgress.target_weight).toFixed(1) + " g" : "null";
+  // Weights on the wire are gross -- vessel included. Progress is meaningful only
+  // net of the vessel, otherwise an empty vessel already reads as partly brewed.
+  const vesselWeight = brewInProgress?.vessel_weight ?? null;
+  const vesselWeightString = vesselWeight !== null ? vesselWeight.toFixed(1) + " g" : "null";
 
   const isError = brewState === "error";
   const errorMessage = brewInProgress?.error_message || "Unknown error";
@@ -95,6 +94,10 @@ function BrewInner() {
   const valvePosition = brewInProgress?.valve_position ?? null;
 
   const flag = import.meta.env.BREWCTL_FRONTEND_IS_PROD === 'true' ? "--prod" : "--dev";
+
+  // A simulated brew looks exactly like a real one on this screen, so say so
+  // outright -- both in the command line at the top and as its own row.
+  const isDryRun = brewInProgress?.dry_run === true;
 
 
   const front = (
@@ -109,9 +112,18 @@ function BrewInner() {
   const back = (
     <div className="terminal-box terminal-glow">
       <div className="terminal-header terminal-row">
-        <span>$ ./brewctl inspect {flag} --verbose</span>
+        <span>$ ./brewctl inspect {flag} --verbose{isDryRun ? " --dry-run" : ""}</span>
       </div>
-      
+
+      {isDryRun && (
+        <div className="terminal-row">
+          <span className="terminal-label">MODE:_</span>
+          <span className="terminal-value" aria-label="dry_run_badge">
+            [DRY_RUN] simulated hardware, accelerated clock
+          </span>
+        </div>
+      )}
+
       <div className="terminal-row">
         <span className="terminal-label">BREW_ID:_</span>
         <span className="terminal-value">{brewId}</span>
@@ -120,6 +132,12 @@ function BrewInner() {
         <span className="terminal-label">TARGET_WEIGHT:_</span>
         <span className="terminal-value">{targetWeight}</span>
       </div>
+      {vesselWeight !== null && (
+        <div className="terminal-row">
+          <span className="terminal-label">VESSEL_WEIGHT:_</span>
+          <span className="terminal-value">{vesselWeightString}</span>
+        </div>
+      )}
       <div className="terminal-row">
         <span className="terminal-label">TIME_STARTED:_</span>
         <span className="terminal-value">{started}</span>
@@ -153,7 +171,12 @@ function BrewInner() {
       {weight !== "null" && targetWeight !== "null" && (
         <div className="terminal-row">
           <span className="terminal-label">PROGRESS:_</span>
-          <span className="terminal-value">{formatProgressBar(parseFloat(weight), parseFloat(targetWeight))}</span>
+          <span className="terminal-value">
+            {vesselWeight !== null
+              ? formatProgressBar(parseFloat(weight) - vesselWeight, parseFloat(targetWeight) - vesselWeight)
+              : /* No vessel weight in the payload: fall back to gross rather than blank. */
+                formatProgressBar(parseFloat(weight), parseFloat(targetWeight))}
+          </span>
         </div>
       )}
       {etaString && (
@@ -176,6 +199,8 @@ function BrewInner() {
           <TrendChart 
             flowRateHistory={brewInProgress?.flow_rate_history || []} 
             weightHistory={brewInProgress?.weight_history || []}
+            /* Gross on purpose: weightHistory is raw scale readings, so netting one
+               side and not the other is what produced the progress-bar bug. */
             targetWeight={brewInProgress?.target_weight || null}
             isActive={isActive}
           />
@@ -197,6 +222,7 @@ function BrewInner() {
             <PauseResumeButton />
             <CancelBrew />
             <NudgeButtons />
+            <SwitchStrategyControl />
           </>
         )}
       </div>

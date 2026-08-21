@@ -98,6 +98,50 @@ terminates them — setting `cur_brew = None` or a new id ends the loop):
 State is global mutable module state, not a session store — one brew at a time. Tests reset it via
 the `client`/`reset_globals` fixtures in `backend/tests/api/conftest.py`.
 
+### Dry-run brews
+
+`POST /api/brew/start` with `dry_run: true` runs a brew against simulated hardware regardless of
+`BREWCTL_IS_PROD`, on a clock compressed by `time_scale` (default 60x). Three pieces have to agree:
+
+- `api/server.py` swaps the module globals `scale`/`valve` for `SimulatedScale` + `MockValve` and
+  sets `_time_scale`. `_restore_hardware()` hands them back and **must** run on every exit path
+  (completion, stop, kill, the already-brewing 409) — a leaked dry run would leave the next *real*
+  brew driving a mock while reporting healthy. The hardware version check is skipped for dry runs;
+  `MockValve` has no `hardware_api_version`, so `check_hardware_compatibility()` would 409 them all.
+- `core/simulated_scale.py` derives weight from valve position (`flow_for_position()`), lazily on
+  read rather than on a thread, and fills `_time_scale` times faster.
+- `sleep_with_heartbeat()` divides by `_time_scale`, and `_simulated_flow()` divides *measured* flow
+  by it. Both are needed: `WeightBuffer` measures in wall-clock seconds, so without the second one
+  the strategy sees 60x its target and shuts the valve on the first step.
+
+Sim points are tagged `dry_run="true"` in InfluxDB. The "real" predicate is
+`(not exists r.dry_run or r.dry_run == "false")` — points written before this feature carry no tag,
+so a bare `== "false"` would hide all pre-existing history (`api/time_series.py:dry_run_filter`).
+
+### Live strategy switching
+
+`POST /api/brew/strategy` swaps the running brew's strategy in place — the valve stays where it is,
+which is the whole point (stop/start returns it to start and discards the operating point). Three
+module globals in `api/server.py` back it:
+
+- `cur_strategy` — the loop re-reads it every iteration, so `brew_step_task` takes no `strategy`
+  parameter. Tests that drive the loop must set the global, not pass an argument.
+- `cur_base_params` — `target_flow_rate` / `valve_interval` / `scale_interval` / `epsilon` come from
+  `StartBrewRequest` and are **not** stored on `Brew`, so without this a swapped-in strategy would
+  silently fall back to config defaults and brew to a different target.
+- `strategy_switch_event` — cuts short the in-flight `sleep_with_heartbeat` (up to 90s). It is
+  created inside `brew_step_task`, not `start_brew`: an `asyncio.Event` waiter is only woken by a
+  `set()` on its own loop, and tests run the task under their own `asyncio.run`.
+
+**The event is cleared at the top of the brew loop, never inside `sleep_with_heartbeat`.** A switch
+usually lands while the loop is in `strategy.step()` or a valve call, not while sleeping; clearing on
+the wake path would leave it set, and the next sleep would return instantly — two valve commands back
+to back instead of a `valve_interval` apart. `STRATEGY_SWITCH_MIN_INTERVAL_SECONDS` (429) is the
+hard bound on that. `AbstractBrewStrategy.warm_start(valve_position, flow_rate)` seeds the new
+instance (no-op by default); `prev_timestamp` is the field that matters, since a constructor-era one
+yields a huge first `dt`. A swapped-in strategy's `scale_interval` is inert — `collect_scale_data_task`
+is not restarted.
+
 ### Strategies
 
 `AbstractBrewStrategy.step(flow_rate, current_weight) -> (ValveCommand, interval_seconds)`. Concrete
@@ -107,6 +151,14 @@ strategies live in `api/strategies/` (one class per file, `PascalCase.py`) and s
 registry and base class themselves live in `strategies/DefaultBrewStrategy.py`.
 `api/brew_strategy.py` is a re-export shim — importing it is what triggers registration of every
 strategy, so import from there rather than from the submodules.
+
+`step()` is **not** called on the event loop. `brew_step_task` routes it through
+`run_step_with_heartbeat()`, which runs it via `asyncio.to_thread` while a ticker feeds the hardware
+watchdog -- otherwise an `AIBrewStrategy` blocking on an LLM call would freeze the whole api process
+and let the watchdog close the valve mid-step. Two consequences: `step()` must be sync and must not
+touch the running loop (`asyncio.get_running_loop()` raises in there), and because the call can now
+take seconds, `brew_step_task` re-checks `cur_brew.id` and `strategy_switch_event` after it returns
+and discards the command if the brew ended or the strategy changed meanwhile.
 
 Adding a strategy touches four places, all of which must agree:
 
@@ -120,10 +172,12 @@ Adding a strategy touches four places, all of which must agree:
 ### Frontend
 
 React 18 + Chakra UI v3 + Vite + Recharts. Real-time updates come from SSE (`useBrewStatus`
-subscribes to `/sse/brew/status`, `useConnectionStatus` to `/sse/health`); WebSocket endpoints
-(`/ws/brew/status`, `/ws/health`) still exist on the backend as an older path. URLs are derived in
-`components/brew/constants.ts` by string-rewriting the API URL — changing the API base path affects
-SSE/WS URLs too.
+subscribes to `/sse/brew/status`, `useConnectionStatus` to `/sse/health`). The older
+`/ws/brew/status` and `/ws/health` endpoints were removed; the `BREWCTL_WS_*_PUSH_INTERVAL` env
+vars survive under those names and now pace the SSE streams. All service URLs are built by
+`serviceUrl(path, params?)` in `components/brew/constants.ts`, which strips the trailing `/api`
+segment off the API URL with the `URL` API and appends query parameters — add new endpoints through
+it rather than by string-rewriting `apiUrl`.
 
 ### CI/CD (Forgejo, `.forgejo/workflows/`)
 
@@ -195,5 +249,10 @@ not trigger runs.
   the real classes and breaks ~12 unrelated tests with 503s — import the module inside a fixture that
   depends on `client`.
 - Tests are split `tests/core`, `tests/api`, `tests/hardware`, each with its own `conftest.py`
-  (`client` for the api app, `hardware_client` for the hardware app). README's "Testing Guidelines"
-  section still lists the pre-split flat filenames (e.g. `test_brew_api.py`) and is stale there.
+  (`client` for the api app, `hardware_client` for the hardware app).
+- README's endpoint tables are **generated** — `make docs` runs
+  `backend/scripts/gen_endpoint_docs.py`, which renders both apps' OpenAPI schemas between the
+  `<!-- BEGIN/END GENERATED ENDPOINTS -->` markers. `backend/tests/test_readme_endpoints.py` runs it
+  with `--check` (in a subprocess, since importing `api.server` in-process would bind the real
+  `HttpScale`/`HttpValve`), so adding a route without regenerating fails the suite. Route docstrings
+  are the table's Description column — the first line is what shows up.

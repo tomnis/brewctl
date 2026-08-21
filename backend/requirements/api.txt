@@ -15,7 +15,3 @@ six==1.17.0
 
 # HTTP + SSE client for the hardware service (api/http_scale.py, api/http_valve.py).
 httpx==0.28.1
-
-# Serves the /ws/* endpoints in api/server.py. Also arrives transitively via
-# fastapi[standard] -> uvicorn[standard]; pinned here so it is not left to chance.
-websockets==14.1

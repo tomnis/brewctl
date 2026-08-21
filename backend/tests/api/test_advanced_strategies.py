@@ -341,3 +341,30 @@ class TestSmithPredictorAdvancedBrewStrategy:
     def test_delay_samples_calculated_from_dead_time(self):
         s = self._make(dead_time=30.0, valve_interval=10)
         assert s.delay_samples == 3  # 30 / 10
+
+
+class TestIntegralAntiWindup:
+    """The anti-windup clamp used to read `min(integral_limit, integral_limit)`, so
+    `integral` jumped to the limit on the first step regardless of accumulated error."""
+
+    def _pid(self):
+        return PIDBrewStrategy(
+            target_flow_rate=0.05, scale_interval=0.5, valve_interval=10,
+            target_weight=500, vessel_weight=100,
+            kp=1.0, ki=0.1, kd=0.05, integral_limit=100.0,
+        )
+
+    def test_small_error_stays_small(self):
+        pid = self._pid()
+        pid.step(0.049, 200.0)   # first step only seeds prev_timestamp
+        pid.step(0.049, 200.1)
+        assert abs(pid.integral) < 1.0
+
+    def test_clamp_still_bounds_large_accumulation(self):
+        pid = self._pid()
+        pid.integral = 1e6
+        pid.prev_timestamp = None
+        pid.step(0.0, 200.0)
+        pid.step(0.0, 200.1)
+        assert pid.integral <= pid.integral_limit
+        assert pid.integral >= -pid.integral_limit

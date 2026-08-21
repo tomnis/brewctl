@@ -173,6 +173,17 @@ class MPCBrewStrategy(AbstractBrewStrategy):
         
         return best_u
 
+    def warm_start(self, valve_position: Optional[int], flow_rate: Optional[float]) -> None:
+        """Seed the plant model from the running brew's operating point, so a live
+        swap does not re-run the cold-start identification from a zeroed model."""
+        import time
+        if flow_rate is not None:
+            self.model_state = flow_rate
+            self.is_initialized = True
+        if valve_position is not None:
+            self.prev_control = float(valve_position)
+        self.prev_timestamp = time.time()
+
     def step(self, current_flow_rate: Optional[float], current_weight: Optional[float]) -> Tuple[ValveCommand, int]:
         """Perform a single step using MPC control."""
         import time

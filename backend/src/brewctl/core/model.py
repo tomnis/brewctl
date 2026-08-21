@@ -4,7 +4,7 @@ from .config import *
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class BrewStrategyType(str, Enum):
@@ -14,6 +14,7 @@ class BrewStrategyType(str, Enum):
     SMITH_PREDICTOR_ADVANCED = "smith_predictor_advanced"
     ADAPTIVE_GAIN_SCHEDULING = "adaptive_gain_scheduling"
     MPC = "mpc"
+    AI = "ai"
 
 
 class BrewState(str, Enum):
@@ -73,6 +74,17 @@ class ScaleStatus(BaseModel):
     battery_pct: Optional[int] = None
 
 
+class StrategySwitch(BaseModel):
+    """One live strategy swap on a running brew, recorded so quality scoring does not
+    attribute the whole brew to whichever strategy happened to be last."""
+    timestamp: datetime
+    from_strategy: BrewStrategyType
+    to_strategy: BrewStrategyType
+    strategy_params: Dict[str, Any] = {}
+    valve_position: Optional[int] = None
+    flow_rate: Optional[float] = None
+
+
 class Brew(BaseModel):
     id: str
     status: BrewState
@@ -80,8 +92,12 @@ class Brew(BaseModel):
     vessel_weight: float
     target_weight: float
     strategy: BrewStrategyType = BrewStrategyType.DEFAULT
+    strategy_switches: List[StrategySwitch] = []
     time_completed: Optional[datetime] = None
     error_message: Optional[str] = None
+    # Simulated brew: mock hardware, accelerated clock, Influx points tagged so
+    # they stay out of real history.
+    dry_run: bool = False
 
     def to_brew_status(
         self,
@@ -99,12 +115,15 @@ class Brew(BaseModel):
             time_started=self.time_started,
             time_completed=self.time_completed,
             target_weight=self.target_weight,
+            vessel_weight=self.vessel_weight,
             timestamp=timestamp,
             current_flow_rate=current_flow_rate,
             current_weight=current_weight,
             estimated_time_remaining=estimated_time_remaining,
             error_message=self.error_message,
             valve_position=valve_position,
+            dry_run=self.dry_run,
+            strategy_switches=self.strategy_switches,
         )
 
 
@@ -117,6 +136,16 @@ class StartBrewRequest(BaseModel):
     vessel_weight: float = BREWCTL_VESSEL_WEIGHT_GRAMS
     epsilon: float = BREWCTL_EPSILON
     strategy: BrewStrategyType = BrewStrategyType.DEFAULT
+    strategy_params: Dict[str, Any] = {}
+    # Run against simulated hardware regardless of BREWCTL_IS_PROD.
+    dry_run: bool = False
+    # Divides every brew-loop sleep. Honored only when dry_run is set -- a real
+    # brew's timing is dictated by the physical system.
+    time_scale: float = 60.0
+
+
+class SwitchStrategyRequest(BaseModel):
+    strategy: BrewStrategyType
     strategy_params: Dict[str, Any] = {}
 
 
@@ -145,12 +174,17 @@ class BrewStatus(BaseModel):
     time_started: datetime
     time_completed: Optional[datetime] = None
     target_weight: float
+    # Gross target minus this is the coffee target -- the UI needs it to show
+    # progress against coffee rather than against vessel + coffee.
+    vessel_weight: float
     timestamp: datetime
     current_flow_rate: Optional[float] = None
     current_weight: Optional[float] = None
     estimated_time_remaining: Optional[float] = None
     error_message: Optional[str] = None
     valve_position: Optional[int] = None  # 0-199 for one full rotation
+    dry_run: bool = False
+    strategy_switches: List[StrategySwitch] = []
 
 
 # ==================== Health Check Models ====================

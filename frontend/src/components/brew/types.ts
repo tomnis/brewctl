@@ -12,6 +12,16 @@ export interface DataPoint {
   weight: number | null;
 }
 
+export interface StrategySwitch {
+  timestamp: string;
+  from_strategy: string;
+  to_strategy: string;
+  // Whatever the strategy defines; keys vary per strategy.
+  strategy_params: Record<string, unknown>;
+  valve_position: number | null;
+  flow_rate: number | null;
+}
+
 export interface BrewInProgress {
   brew_id: string;
   current_flow_rate: string | null;
@@ -24,6 +34,13 @@ export interface BrewInProgress {
   estimated_time_remaining: string | null;
   error_message: string | null;
   valve_position: number | null;  // 0-199 for one full rotation
+  // Gross target minus this is the coffee target. Nullable: a partial payload must
+  // not turn the progress bar into NaN.
+  vessel_weight?: number | null;
+  // Simulated brew: mock hardware and an accelerated clock.
+  dry_run?: boolean;
+  // Live strategy swaps applied to this brew, oldest first.
+  strategy_switches?: StrategySwitch[];
   // Historical data for trend visualization
   flow_rate_history?: DataPoint[];
   weight_history?: DataPoint[];

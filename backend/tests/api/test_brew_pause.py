@@ -91,8 +91,10 @@ def test_step_loop_does_not_resume_a_paused_brew(server, monkeypatch):
             brew.status = BrewState.PAUSED
             return (ValveCommand.FORWARD, 0.001)
 
-    asyncio.run(
-        _run_briefly(lambda: server.brew_step_task(brew.id, PausingStrategy()))
-    )
+    # The loop reads the strategy from the module global every iteration so a live
+    # switch can swap it, so that is where the test has to put it.
+    monkeypatch.setattr(server, "cur_strategy", PausingStrategy())
+
+    asyncio.run(_run_briefly(lambda: server.brew_step_task(brew.id)))
 
     assert brew.status == BrewState.PAUSED

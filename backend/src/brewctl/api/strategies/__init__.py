@@ -5,6 +5,7 @@ from .MPCBrewStrategy import MPCBrewStrategy
 from .KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
 from .SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
 from .AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
+from .AIBrewStrategy import AIBrewStrategy
 from .kalman_filter import KalmanFilter
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "KalmanPIDBrewStrategy",
     "SmithPredictorAdvancedBrewStrategy",
     "AdaptiveGainSchedulingBrewStrategy",
+    "AIBrewStrategy",
     "KalmanFilter",
 ]

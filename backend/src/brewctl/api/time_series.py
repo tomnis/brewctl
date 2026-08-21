@@ -1,12 +1,26 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from datetime import datetime
 
 from brewctl.core.log import logger
+from brewctl.core import metrics
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 from retry import retry
 from brewctl.core.config import BREWCTL_VALVE_INTERVAL_SECONDS
+
+
+# Points written before dry runs existed carry no dry_run tag, so "real" cannot be
+# expressed as `r.dry_run == "false"` -- that predicate hides all pre-existing
+# history. Absence of the tag means real.
+DRY_RUN_TAG = "dry_run"
+REAL_FILTER = f'(not exists r.{DRY_RUN_TAG} or r.{DRY_RUN_TAG} == "false")'
+DRY_RUN_FILTER = f'r.{DRY_RUN_TAG} == "true"'
+
+
+def dry_run_filter(dry_run: bool) -> str:
+    """Flux predicate selecting simulated or real points."""
+    return DRY_RUN_FILTER if dry_run else REAL_FILTER
 
 
 class AbstractTimeSeries(ABC):
@@ -23,12 +37,20 @@ class AbstractTimeSeries(ABC):
         pass
 
     @abstractmethod
-    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str) -> None:
+    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str, dry_run: bool = False) -> None:
         """Write the current weight to the time series."""
         pass
 
     @abstractmethod
-    def get_current_weight(self) -> float:
+    def write_strategy_switch(self, brew_id: str, from_strategy: str, to_strategy: str,
+                              valve_position: Optional[int] = None,
+                              flow_rate: Optional[float] = None,
+                              dry_run: bool = False) -> None:
+        """Annotate a live strategy switch so a brew can be segmented by strategy."""
+        pass
+
+    @abstractmethod
+    def get_current_weight(self, dry_run: bool = False) -> float:
         """Get the current weight from the time series."""
         pass
 
@@ -38,15 +60,16 @@ class AbstractTimeSeries(ABC):
         pass
 
     @abstractmethod
-    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None, dry_run: bool = False) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
-        
+
         Args:
             duration_seconds: How many seconds of history to query
             start_time_filter: If provided, only include readings from this time onwards.
                               Any readings before this time will be filtered out.
-            
+            dry_run: Read simulated points instead of real ones.
+
         Returns:
             List of (timestamp, weight) tuples sorted by time ascending
         """
@@ -75,21 +98,63 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         # ping() swallows exceptions and returns False rather than raising.
         return bool(self._health_client.ping())
 
-    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str):
+    def write_scale_data(self, weight: float, battery_pct: int, brew_id: str, dry_run: bool = False):
         """Write the current weight to the time series asynchronously."""
         # logger.info(f"writing influxdb data: {weight} {battery_pct}")
-        p = Point("coldbrew").tag("brew_id", brew_id).field("weight_grams", weight).field("battery_pct", battery_pct)
+        # Tagged rather than written elsewhere: a dry run then reads its own points
+        # back through the same queries a real brew uses, so the Influx fallback
+        # path and the quality endpoint are exercised too.
+        p = (Point("coldbrew")
+             .tag("brew_id", brew_id)
+             .tag(DRY_RUN_TAG, "true" if dry_run else "false")
+             .field("weight_grams", weight)
+             .field("battery_pct", battery_pct))
         # Use ASYNCHRONOUS write to avoid blocking the control loop on network latency
         write_api = self.influxdb.write_api(write_options=SYNCHRONOUS)
-        write_api.write(bucket=self.bucket, record=p)
+        self._write(write_api, p)
 
+    def write_strategy_switch(self, brew_id: str, from_strategy: str, to_strategy: str,
+                              valve_position: Optional[int] = None,
+                              flow_rate: Optional[float] = None,
+                              dry_run: bool = False) -> None:
+        """Annotate a live strategy switch.
+
+        A separate measurement from "coldbrew" on purpose: the weight queries and the
+        flow-rate derivative filter on measurement, and an event point carrying no
+        weight_grams field would otherwise have to be excluded everywhere.
+        """
+        p = (Point("brew_event")
+             .tag("brew_id", brew_id)
+             .tag("event", "strategy_switch")
+             .tag("to_strategy", to_strategy)
+             .tag(DRY_RUN_TAG, "true" if dry_run else "false")
+             .field("from_strategy", from_strategy))
+        if valve_position is not None:
+            p = p.field("valve_position", int(valve_position))
+        if flow_rate is not None:
+            p = p.field("flow_rate", float(flow_rate))
+        write_api = self.influxdb.write_api(write_options=SYNCHRONOUS)
+        self._write(write_api, p)
+
+    def _write(self, write_api, point) -> None:
+        """Write one point, counting failures.
+
+        Deliberately re-raises: collect_scale_data_task catching this and moving
+        the brew to ERROR is the existing behaviour, and the counter only exists
+        to make that visible before someone reads the logs.
+        """
+        try:
+            write_api.write(bucket=self.bucket, record=point)
+        except Exception:
+            metrics.influx_write_failures.inc()
+            raise
 
     @retry(tries=10, delay=4)
-    def get_current_weight(self) -> float:
+    def get_current_weight(self, dry_run: bool = False) -> float:
         query_api = self.influxdb.query_api()
         query = f'from(bucket: "{self.bucket}")\
             |> range(start: -10s)\
-            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")'
+            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams" and {dry_run_filter(dry_run)})'
         tables = query_api.query(org=self.org, query=query)
         # for table in tables:
         #     for record in table.records:
@@ -100,7 +165,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         return result.get_value()
 
     @retry(tries=10, delay=4)
-    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None) -> List[Tuple[datetime, float]]:
+    def get_recent_weight_readings(self, duration_seconds: int = BREWCTL_VALVE_INTERVAL_SECONDS, start_time_filter: datetime | None = None, dry_run: bool = False) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB.
         
@@ -115,7 +180,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         query_api = self.influxdb.query_api()
         query = f'from(bucket: "{self.bucket}")\
             |> range(start: -{duration_seconds}s)\
-            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")'
+            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams" and {dry_run_filter(dry_run)})'
         tables = query_api.query(org=self.org, query=query)
         
         readings: List[Tuple[datetime, float]] = []
@@ -189,9 +254,10 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
 
     @retry(tries=10, delay=4)
     def get_weight_readings_in_range(
-        self, 
-        start_time: datetime, 
-        end_time: datetime
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        dry_run: bool = False
     ) -> List[Tuple[datetime, float]]:
         """
         Read raw sequential weight values from InfluxDB within a time range.
@@ -211,7 +277,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         
         query = f'from(bucket: "{self.bucket}")\
             |> range(start: {duration_str})\
-            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams")'
+            |> filter(fn: (r) => r._measurement == "coldbrew" and r._field == "weight_grams" and {dry_run_filter(dry_run)})'
         tables = query_api.query(org=self.org, query=query)
         
         readings: List[Tuple[datetime, float]] = []
@@ -231,7 +297,8 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
         self, 
         start_time: datetime, 
         end_time: datetime,
-        window_seconds: float = BREWCTL_VALVE_INTERVAL_SECONDS
+        window_seconds: float = BREWCTL_VALVE_INTERVAL_SECONDS,
+        dry_run: bool = False
     ) -> List[float]:
         """
         Calculate flow rates for each time window during a brew.
@@ -248,7 +315,7 @@ class InfluxDBTimeSeries(AbstractTimeSeries):
             List of flow rates (g/s) for each window
         """
         # Get all weight readings for the brew
-        all_readings = self.get_weight_readings_in_range(start_time, end_time)
+        all_readings = self.get_weight_readings_in_range(start_time, end_time, dry_run=dry_run)
         
         if len(all_readings) < 2:
             logger.warning("Insufficient readings for flow rate calculation")

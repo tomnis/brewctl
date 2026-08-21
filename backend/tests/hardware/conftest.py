@@ -54,3 +54,12 @@ def hardware_client(hardware_mock_scale, hardware_mock_valve):
 
     hw_server.scale = None
     hw_server.valve = None
+
+
+@pytest.fixture(autouse=True)
+def reset_prometheus_metrics():
+    """See tests/api/conftest.py -- metrics are process-global."""
+    from brewctl.core import metrics
+
+    metrics.reset_metrics()
+    yield

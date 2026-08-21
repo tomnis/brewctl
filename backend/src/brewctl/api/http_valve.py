@@ -194,3 +194,12 @@ class HttpValve(AbstractValve):
 
         # Fallback to HTTP request if SSE hasn't provided position yet
         return self._request("GET", "/api/valve/position")["position"]
+
+    def cached_position(self) -> int | None:
+        """Position from the SSE cache only -- never falls back to HTTP.
+
+        get_position()'s fallback is a blocking request, so it must not be
+        reached from a /metrics scrape running on the event loop.
+        """
+        with self._lock:
+            return self._position

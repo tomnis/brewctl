@@ -34,12 +34,32 @@ class AbstractValve(ABC):
         """Get current absolute position (0-199 for one full rotation)."""
         pass
 
+    def cached_position(self) -> int | None:
+        """Position without doing any I/O, for metrics scrapes.
+
+        get_position() may block (HttpValve falls back to a synchronous HTTP
+        call when its SSE cache is empty), and a Prometheus scrape runs on the
+        event loop. Local valves hold the position in memory, so the default is
+        just get_position(); HttpValve overrides it with a cache-only read.
+        """
+        return self.get_position()
+
     def heartbeat(self):
         """
         Signal that a controller is still alive and holding the valve.
 
         Only meaningful for remote valves guarded by a watchdog; local valves have
         no watchdog to feed, so this is a no-op by default.
+        """
+        pass
+
+    def disconnect(self):
+        """
+        Tear down any connection to the device.
+
+        Only remote valves hold one (HttpValve stops its SSE listener); local
+        valves have nothing to close. Defined here so shutdown -- and any dry run
+        still installed at that point -- can call it unconditionally.
         """
         pass
 

@@ -68,6 +68,16 @@ class AbstractBrewStrategy(ABC):
         """Create strategy instance from strategy params and base params."""
         pass
 
+    def warm_start(self, valve_position: Optional[int], flow_rate: Optional[float]) -> None:
+        """Seed instance state from a running brew's operating point.
+
+        Called when a strategy is swapped into a brew that is already in flight, so
+        the new instance does not start from a cold integrator or an unconverged
+        filter. Seeding only -- the physical valve is deliberately left where it is.
+        Default is a no-op, which is correct for stateless strategies.
+        """
+        return None
+
 
 def create_brew_strategy(strategy_type: BrewStrategyType, params: Dict[str, Any], base_params: Dict[str, Any]) -> "AbstractBrewStrategy":
     """Factory function to create a brew strategy from the registry."""

@@ -23,6 +23,9 @@ BREWCTL_EPSILON = float(os.environ.get("BREWCTL_EPSILON", "0.008"))
 # Target weight settings (includes vessel weight)
 BREWCTL_TARGET_WEIGHT_GRAMS = int(os.environ.get("BREWCTL_TARGET_WEIGHT_GRAMS", "1337"))
 BREWCTL_VESSEL_WEIGHT_GRAMS = int(os.environ.get("BREWCTL_VESSEL_WEIGHT_GRAMS", "229"))
+# Logged because this is the value to check first when a brew stops at the wrong
+# weight: it is subtracted from every target, and nothing in the UI sets it.
+logger.info(f"BREWCTL_VESSEL_WEIGHT_GRAMS = {BREWCTL_VESSEL_WEIGHT_GRAMS}")
 
 # Collection intervals
 BREWCTL_SCALE_READ_INTERVAL = float(os.getenv("BREWCTL_SCALE_READ_INTERVAL", "0.5"))
@@ -32,7 +35,7 @@ BREWCTL_VALVE_INTERVAL_SECONDS = int(
 )
 logger.info(f"BREWCTL_VALVE_INTERVAL_SECONDS = {BREWCTL_VALVE_INTERVAL_SECONDS}")
 
-# ===== WebSocket Configuration =====
+# ===== Realtime push configuration (SSE) =====
 # These settings are shared for real-time updates
 BREWCTL_WS_PUSH_INTERVAL = float(os.getenv("BREWCTL_WS_PUSH_INTERVAL", "1.0"))
 logger.info(f"BREWCTL_WS_PUSH_INTERVAL = {BREWCTL_WS_PUSH_INTERVAL}")

@@ -12,6 +12,7 @@ from brewctl.api.strategies.MPCBrewStrategy import MPCBrewStrategy
 from brewctl.api.strategies.KalmanPIDBrewStrategy import KalmanPIDBrewStrategy
 from brewctl.api.strategies.SmithPredictorAdvancedBrewStrategy import SmithPredictorAdvancedBrewStrategy
 from brewctl.api.strategies.AdaptiveGainSchedulingBrewStrategy import AdaptiveGainSchedulingBrewStrategy
+from brewctl.api.strategies.AIBrewStrategy import AIBrewStrategy
 from brewctl.api.strategies.kalman_filter import KalmanFilter
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "KalmanPIDBrewStrategy",
     "SmithPredictorAdvancedBrewStrategy",
     "AdaptiveGainSchedulingBrewStrategy",
+    "AIBrewStrategy",
     "KalmanFilter",
     "BREW_STRATEGY_REGISTRY",
     "register_strategy",

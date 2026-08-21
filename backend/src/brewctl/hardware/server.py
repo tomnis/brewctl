@@ -14,6 +14,7 @@ from brewctl.core.log import logger
 from brewctl.core.contract import HARDWARE_API_VERSION
 from brewctl.core.valve import AbstractValve
 from brewctl.core.scale import AbstractScale
+from brewctl.core import metrics
 from brewctl.core.config import *
 from brewctl.hardware.config import *
 
@@ -61,8 +62,9 @@ _nudge_lock = threading.Lock()
 
 # Deadman switch: if the valve is off its start position and nothing has fed the
 # timer for long enough, close it. Only the endpoints that touch the valve (and
-# the explicit heartbeat) feed it -- unrelated traffic such as /health or SSE
-# subscriptions must not keep an open valve alive.
+# the explicit heartbeat) feed it -- unrelated traffic such as /health, /metrics
+# or SSE subscriptions must not keep an open valve alive. A Prometheus scraper
+# polling every 15s would otherwise hold the deadman open indefinitely.
 #
 # The timeout is *derived*, not a stored armed/disarmed flag, because the api that
 # talks to us may be older than this code. An api from before the heartbeat
@@ -130,6 +132,7 @@ async def hardware_watchdog():
                 f"Hardware watchdog triggered: nothing fed the timer for {elapsed:.1f}s "
                 f"(timeout {timeout}s), position {position}. Closing valve."
             )
+            metrics.watchdog_trips.inc()
             await asyncio.to_thread(valve.return_to_start)
         except asyncio.CancelledError:
             raise
@@ -186,6 +189,12 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"message": "Hello World from BrewCTL Hardware"}
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus metrics for the hardware service."""
+    return metrics.metrics_response()
 
 
 @app.get("/health")
@@ -342,6 +351,7 @@ async def get_status():
 
 async def sse_valve_status_generator() -> AsyncGenerator[str, None]:
     """SSE generator for real-time valve status updates."""
+    metrics.sse_clients.labels(stream="valve").inc()
     try:
         while True:
             if valve is None:
@@ -361,6 +371,10 @@ async def sse_valve_status_generator() -> AsyncGenerator[str, None]:
     except asyncio.CancelledError:
         logger.info("SSE valve status connection closed by client")
         raise
+    finally:
+        # CancelledError is not the only way out of here, and a missed decrement
+        # leaves the gauge permanently high.
+        metrics.sse_clients.labels(stream="valve").dec()
 
 
 @app.get("/sse/valve/status")
@@ -383,6 +397,7 @@ async def sse_valve_status():
 def _read_scale_status() -> dict:
     """Read all scale values. Blocking (BLE) -- call via asyncio.to_thread."""
     connected = scale.connected
+    metrics.scale_connected.set(1 if connected else 0)
     return {
         "connected": connected,
         "weight": scale.get_weight() if connected else None,
@@ -393,6 +408,7 @@ def _read_scale_status() -> dict:
 
 async def sse_scale_status_generator() -> AsyncGenerator[str, None]:
     """SSE generator for real-time scale status updates."""
+    metrics.sse_clients.labels(stream="scale").inc()
     try:
         while True:
             if scale is None:
@@ -406,6 +422,8 @@ async def sse_scale_status_generator() -> AsyncGenerator[str, None]:
     except asyncio.CancelledError:
         logger.info("SSE scale status connection closed by client")
         raise
+    finally:
+        metrics.sse_clients.labels(stream="scale").dec()
 
 
 @app.get("/sse/scale/status")

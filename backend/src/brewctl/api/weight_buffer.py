@@ -29,12 +29,16 @@ class WeightBuffer:
     def is_ready(self, min_readings: int = 2) -> bool:
         return len(self._buffer) >= min_readings
 
-    def is_stale(self, max_age_seconds: float = 2.0) -> bool:
+    def age_seconds(self) -> Optional[float]:
+        """Age of the newest reading, or None when the buffer is empty."""
         if not self._buffer:
-            return True
+            return None
 
-        age = (datetime.now(timezone.utc) - self._buffer[-1][0]).total_seconds()
-        return age > max_age_seconds
+        return (datetime.now(timezone.utc) - self._buffer[-1][0]).total_seconds()
+
+    def is_stale(self, max_age_seconds: float = 2.0) -> bool:
+        age = self.age_seconds()
+        return age is None or age > max_age_seconds
 
     def clear(self):
         self._buffer.clear()

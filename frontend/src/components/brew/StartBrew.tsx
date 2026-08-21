@@ -9,6 +9,7 @@ import {
   DEFAULT_TARGET_WEIGHT, 
   STRATEGIES, 
   DEFAULT_STRATEGY,
+  DRY_RUN_TIME_SCALE,
   StrategyType,
   Strategy
 } from "./constants";
@@ -22,6 +23,7 @@ export default function StartBrew() {
   const [epsilon, setEpsilon] = React.useState("");
   const [strategy, setStrategy] = React.useState<StrategyType>(DEFAULT_STRATEGY);
   const [strategyParams, setStrategyParams] = React.useState<Record<string, string>>({});
+  const [dryRun, setDryRun] = React.useState(false);
   
   const [targetFlowError, setTargetFlowError] = React.useState<string | null>(null);
   const [valveIntervalError, setValveIntervalError] = React.useState<string | null>(null);
@@ -100,9 +102,15 @@ export default function StartBrew() {
       valve_interval: parseFloat(effectiveValveInterval),
       epsilon: parseFloat(effectiveEpsilon),
       target_weight: parseFloat(effectiveTargetWeight),
-      vessel_weight: 229,
+      // vessel_weight is deliberately not sent: BREWCTL_VESSEL_WEIGHT_GRAMS on the
+      // api is the single source of truth, so changing vessels is an env var change
+      // rather than a code change. A literal here would silently win over it.
       strategy: strategy,
       strategy_params: effectiveStrategyParams,
+      // Top-level, not inside strategy_params: those are strings and get
+      // forwarded into create_brew_strategy on the backend.
+      dry_run: dryRun,
+      time_scale: DRY_RUN_TIME_SCALE,
     };
 
     try {
@@ -132,6 +140,7 @@ export default function StartBrew() {
   const targetWeightInputId = useId();
   const epsilonInputId = useId();
   const strategyInputId = useId();
+  const dryRunInputId = useId();
 
   return (
     <Container maxW="container.xl">
@@ -271,6 +280,24 @@ export default function StartBrew() {
             {epsilonError}
           </Text>
         )}
+
+        <Box mb={4}>
+          <label className="terminal-row" htmlFor={dryRunInputId}>
+            <input
+              type="checkbox"
+              id={dryRunInputId}
+              checked={dryRun}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDryRun(e.target.checked)}
+              aria-label="dry_run"
+              style={{ marginRight: "8px" }}
+            />
+            DRY_RUN:_
+          </label>
+          <Text fontSize="xs" color="gray.400" mt={1}>
+            Simulated scale and valve, {DRY_RUN_TIME_SCALE}x clock. Nothing physical moves and the
+            readings stay out of brew history.
+          </Text>
+        </Box>
 
         <div className="terminal-footer">
           <Button

@@ -222,7 +222,7 @@ class AdaptiveGainSchedulingBrewStrategy(AbstractBrewStrategy):
         
         # Integral term with anti-windup
         self.integral += error * dt
-        self.integral = max(-self.integral_limit, min(self.integral_limit, self.integral_limit))
+        self.integral = max(-self.integral_limit, min(self.integral_limit, self.integral))
         i_term = self.ki * self.integral
         
         # Derivative term
@@ -236,6 +236,20 @@ class AdaptiveGainSchedulingBrewStrategy(AbstractBrewStrategy):
         output = max(self.output_min, min(self.output_max, output))
         
         return output
+
+    def warm_start(self, valve_position: Optional[int], flow_rate: Optional[float]) -> None:
+        """Seed PID state from the running brew's operating point.
+
+        prev_timestamp is the one that matters: left at its constructor value, the
+        first dt after a live swap is measured from process start and produces a
+        derivative kick. The integrator deliberately starts at zero -- inheriting
+        accumulated error from a different controller's units is meaningless.
+        """
+        import time
+        self.integral = 0.0
+        if flow_rate is not None:
+            self.prev_error = self.target_flow_rate - flow_rate
+        self.prev_timestamp = time.time()
 
     def step(self, current_flow_rate: Optional[float], current_weight: Optional[float]) -> Tuple[ValveCommand, int]:
         """Perform a single step using adaptive gain scheduling."""

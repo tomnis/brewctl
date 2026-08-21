@@ -3,3 +3,5 @@
 # Mode-specific deps live in hardware.txt / api.txt; test deps in dev.txt.
 fastapi[standard]==0.128.0
 fastapi-cli==0.0.20
+# /metrics on both services. Pure Python, no C extension -- fine on the Pi.
+prometheus-client==0.26.0

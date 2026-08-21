@@ -52,6 +52,10 @@ class TestAbstractTimeSeriesInterface:
             
             def write_scale_data(self, weight: float, battery_pct: int, brew_id: str) -> None:
                 pass
+
+            def write_strategy_switch(self, brew_id, from_strategy, to_strategy,
+                                      valve_position=None, flow_rate=None, dry_run=False) -> None:
+                pass
             
             def get_current_weight(self) -> float:
                 return 100.0
@@ -607,3 +611,40 @@ class TestCalculateFlowRateFromDerivatives:
         # 360g over 3600s = 0.1 g/s
         result = ts.calculate_flow_rate_from_derivatives([(t0, 0.0), (t1, 360.0)])
         assert abs(result - 0.1) < 0.001
+
+
+class TestDryRunFilter:
+    """The tag predicate that keeps simulated brews out of real history."""
+
+    def test_real_filter_tolerates_untagged_history(self):
+        from brewctl.api.time_series import dry_run_filter
+
+        # Every point written before dry runs existed carries no dry_run tag.
+        # A bare `r.dry_run == "false"` would hide all of it.
+        predicate = dry_run_filter(False)
+        assert "not exists r.dry_run" in predicate
+        assert 'r.dry_run == "false"' in predicate
+
+    def test_dry_run_filter_selects_only_simulated_points(self):
+        from brewctl.api.time_series import dry_run_filter
+
+        predicate = dry_run_filter(True)
+        assert predicate == 'r.dry_run == "true"'
+        assert "not exists" not in predicate
+
+    def test_write_tags_every_point(self):
+        from unittest.mock import MagicMock, patch
+
+        from brewctl.api.time_series import InfluxDBTimeSeries
+
+        with patch("brewctl.api.time_series.InfluxDBClient"):
+            ts = InfluxDBTimeSeries(url="http://x", token="t", org="o", bucket="b")
+        ts.influxdb = MagicMock()
+
+        ts.write_scale_data(1.0, 100, "brew-1", dry_run=True)
+        point = ts.influxdb.write_api.return_value.write.call_args.kwargs["record"]
+        assert 'dry_run=true' in point.to_line_protocol()
+
+        ts.write_scale_data(1.0, 100, "brew-2")
+        point = ts.influxdb.write_api.return_value.write.call_args.kwargs["record"]
+        assert 'dry_run=false' in point.to_line_protocol()

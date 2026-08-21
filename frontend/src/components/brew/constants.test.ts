@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   apiUrl,
-  wsUrl,
+  serviceUrl,
+  sseUrl,
+  healthSseUrl,
   DEFAULT_FLOW,
   DEFAULT_VALVE_INTERVAL,
   DEFAULT_EPSILON,
@@ -31,16 +33,40 @@ describe('API Configuration', () => {
     });
   });
 
-  describe('wsUrl', () => {
-    it('should return a WebSocket URL string', () => {
-      const ws = wsUrl();
-      expect(typeof ws).toBe('string');
-      expect(ws.startsWith('ws://') || ws.startsWith('wss://')).toBe(true);
+  describe('sseUrl', () => {
+    it('should return an http(s) URL string', () => {
+      const sse = sseUrl();
+      expect(typeof sse).toBe('string');
+      expect(sse.startsWith('http://') || sse.startsWith('https://')).toBe(true);
     });
 
     it('should not contain /api', () => {
-      const ws = wsUrl();
-      expect(ws).not.toContain('/api');
+      expect(sseUrl()).not.toContain('/api');
+    });
+
+    it('should point at the brew status and health streams', () => {
+      expect(sseUrl().endsWith('/sse/brew/status')).toBe(true);
+      expect(healthSseUrl().endsWith('/sse/health')).toBe(true);
+    });
+
+    it('should accept query parameters', () => {
+      const url = new URL(sseUrl({ since: 42, replay: true, missing: undefined }));
+      expect(url.pathname).toBe('/sse/brew/status');
+      expect(url.searchParams.get('since')).toBe('42');
+      expect(url.searchParams.get('replay')).toBe('true');
+      expect(url.searchParams.has('missing')).toBe(false);
+    });
+  });
+
+  describe('serviceUrl', () => {
+    it('should treat a leading slash as optional', () => {
+      expect(serviceUrl('sse/health')).toBe(serviceUrl('/sse/health'));
+    });
+
+    it('should strip only the trailing /api segment', () => {
+      // A host containing "api" must survive; string rewriting ate it.
+      expect(serviceUrl('/sse/health')).not.toContain('/api/');
+      expect(new URL(serviceUrl('/sse/health')).pathname).toBe('/sse/health');
     });
   });
 });

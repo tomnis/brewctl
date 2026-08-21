@@ -12,8 +12,6 @@ from fastapi import (
     Query,
     HTTPException,
     status,
-    WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -25,6 +23,7 @@ from typing import Annotated
 from brewctl.core.log import logger
 from brewctl.core.contract import HARDWARE_API_VERSION, MIN_HARDWARE_API_VERSION
 from brewctl.core.config import *
+from brewctl.core import metrics as brew_metrics
 from brewctl.api.config import *
 from brewctl.core.model import *
 from brewctl.api.http_scale import HttpScale
@@ -37,9 +36,13 @@ from brewctl.core.model import (
     FlowRateResponse,
     HealthStatus,
     HealthResponse,
+    StrategySwitch,
+    SwitchStrategyRequest,
 )
 
 from brewctl.api.http_valve import HttpValve
+from brewctl.core.simulated_scale import SimulatedScale
+from brewctl.core.valve import MockValve
 from brewctl.api.time_series import AbstractTimeSeries
 from brewctl.api.time_series import InfluxDBTimeSeries
 from brewctl.api.weight_buffer import WeightBuffer
@@ -50,6 +53,31 @@ from brewctl.api.config import BREWCTL_HARDWARE_URL
 
 # Single instance of current brew instead of separate id and state
 cur_brew: Brew | None = None
+
+# The strategy the brew loop is driving. A module global rather than a local of
+# brew_step_task so POST /api/brew/strategy can swap it mid-brew; the loop re-reads
+# it every iteration.
+cur_strategy = None
+
+# The base params the current brew was started with. target_flow_rate, valve_interval,
+# scale_interval and epsilon come from StartBrewRequest and are NOT stored on Brew, so
+# without this a swapped-in strategy would silently fall back to the config defaults and
+# brew to a different target than the operator asked for.
+cur_base_params: dict | None = None
+
+# Set by a strategy switch to cut short the brew loop's in-flight sleep, which is
+# otherwise up to BREWCTL_VALVE_INTERVAL_SECONDS long. Created inside brew_step_task:
+# an asyncio.Event waiter is only woken by a set() on the same loop, and the tests
+# drive brew_step_task under their own asyncio.run.
+strategy_switch_event: asyncio.Event | None = None
+
+_strategy_switch_lock = asyncio.Lock()
+
+# Floor on how often the strategy may be swapped. Every switch wakes the brew loop
+# straight into a valve command, so an unbounded switch rate is an unbounded valve
+# command rate.
+STRATEGY_SWITCH_MIN_INTERVAL_SECONDS = 10.0
+_last_strategy_switch_at: float | None = None
 
 
 def create_time_series() -> InfluxDBTimeSeries:
@@ -70,6 +98,74 @@ weight_buffer: WeightBuffer = WeightBuffer(BREWCTL_SCALE_BUFFER_SIZE)
 
 # Valve instance - HttpValve proxies to hardware server
 valve = HttpValve(BREWCTL_HARDWARE_URL)
+
+# The real hardware clients, kept aside so a dry run can borrow the `scale` and
+# `valve` globals and hand them back. Nothing else may reassign these.
+_real_scale = scale
+_real_valve = valve
+
+# Divides every brew-loop sleep. 1.0 outside a dry run -- a real brew's timing is
+# dictated by the physical system.
+_time_scale: float = 1.0
+
+
+def _install_dry_run_hardware(time_scale: float) -> None:
+    """Point the module globals at simulated devices for a dry run."""
+    global scale, valve, _time_scale
+
+    valve = MockValve()
+    scale = SimulatedScale(valve, time_scale=time_scale)
+    scale.connect()
+    _time_scale = max(time_scale, 1.0)
+    logger.info(f"Dry run: simulated scale and valve installed, {_time_scale}x time scale")
+
+
+def _simulated_flow(flow_rate):
+    """Convert a wall-clock flow rate into the brew's own clock.
+
+    A dry run compresses the loop's sleeps by `_time_scale` and SimulatedScale
+    fills `_time_scale` times faster to match, so every *duration* the loop
+    measures is still wall-clock and reads `_time_scale` times too fast. Left
+    uncorrected the strategy sees 60x its target flow and closes the valve on the
+    first step, which is exactly what the first end-to-end dry run did.
+
+    A no-op for real brews, where `_time_scale` is 1.0.
+    """
+    if flow_rate is None:
+        return None
+    return flow_rate / _time_scale
+
+
+def _restore_hardware() -> None:
+    """Hand the globals back to the real hardware clients.
+
+    Load-bearing: a dry run that is never restored leaves the *next* real brew
+    driving a MockValve while reporting healthy -- the same silent-mock failure
+    mode BREWCTL_IS_PROD has. Every path that ends a brew calls this, and it is a
+    no-op when no dry run was installed.
+    """
+    global scale, valve, _time_scale
+
+    if scale is not _real_scale or valve is not _real_valve:
+        logger.info("Dry run over: restoring real hardware clients")
+    scale = _real_scale
+    valve = _real_valve
+    _time_scale = 1.0
+
+
+def _clear_strategy_state() -> None:
+    """Drop the swappable strategy state when a brew ends.
+
+    Deliberately does not touch cur_brew: the STOP path keeps the COMPLETED record
+    for /api/brew/status.
+    """
+    global cur_strategy, cur_base_params, strategy_switch_event, _last_strategy_switch_at
+
+    cur_strategy = None
+    cur_base_params = None
+    strategy_switch_event = None
+    _last_strategy_switch_at = None
+    brew_metrics.clear_brew_metrics()
 
 
 @asynccontextmanager
@@ -197,7 +293,7 @@ def get_influxdb_health() -> dict:
 def get_component_health() -> dict:
     """
     Get health status of all components (scale, valve, influxdb).
-    Returns a dict suitable for WebSocket broadcast.
+    Returns a dict suitable for SSE broadcast.
     """
     # Check scale status
     scale_health = {
@@ -256,6 +352,27 @@ def get_scale_status_endpoint():
 @app.get("/api/valve/position")
 def get_valve_position():
     return {"position": valve.get_position()}
+
+
+def _scrape_valve_position():
+    """Valve position for /metrics, without touching the network.
+
+    HttpValve.get_position() falls back to a blocking HTTP call when its SSE
+    cache is empty, and a scrape runs on the event loop -- cached_position()
+    returns None instead. Reads the module global so a dry run's MockValve is
+    reported while it is installed.
+    """
+    return valve.cached_position() if valve is not None else None
+
+
+brew_metrics.set_scale_age_source(weight_buffer.age_seconds)
+brew_metrics.set_valve_position_source(_scrape_valve_position)
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus metrics for the api service."""
+    return brew_metrics.metrics_response()
 
 
 @app.get("/api/health")
@@ -376,7 +493,9 @@ async def collect_scale_data_task(brew_id, s):
                     logger.warn("Scale returned no weight")
                 if weight is not None and battery_pct is not None:
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
-                    time_series.write_scale_data(weight, battery_pct, brew_id)
+                    time_series.write_scale_data(
+                        weight, battery_pct, brew_id, dry_run=cur_brew.dry_run
+                    )
                     weight_buffer.add_reading(weight)
                     # Recover from ERROR on a successful read -- but never from
                     # PAUSED. This loop also runs while paused (so the weight
@@ -430,30 +549,75 @@ def check_hardware_compatibility() -> dict:
 HEARTBEAT_INTERVAL_SECONDS = 3.0
 
 
-async def sleep_with_heartbeat(seconds: float):
+async def _safe_heartbeat():
+    """Ping the hardware watchdog, logging rather than raising on failure."""
+    try:
+        await asyncio.to_thread(valve.heartbeat)
+    except Exception as e:
+        # Losing the heartbeat is not fatal to the brew loop -- the watchdog
+        # closing the valve is the intended safe outcome.
+        logger.warning(f"Valve heartbeat failed: {e}")
+
+
+async def run_step_with_heartbeat(strategy, flow_rate, weight):
+    """
+    Run strategy.step() off the event loop, feeding the watchdog while it works.
+
+    Most strategies are pure arithmetic and return instantly, but an LLM-backed one
+    can block for seconds. That time is otherwise heartbeat-dead -- heartbeats are
+    only emitted inside sleep_with_heartbeat -- so the hardware watchdog would close
+    the valve mid-step.
+    """
+    task = asyncio.create_task(asyncio.to_thread(strategy.step, flow_rate, weight))
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=HEARTBEAT_INTERVAL_SECONDS)
+        if done:
+            return task.result()
+        await _safe_heartbeat()
+
+
+async def sleep_with_heartbeat(seconds: float) -> bool:
     """
     Sleep, pinging the hardware watchdog along the way.
 
     The strategy's valve interval (up to BREWCTL_VALVE_INTERVAL_SECONDS) is far longer
     than the hardware watchdog timeout, so an unbroken sleep would let the watchdog
     close the valve mid-brew.
+
+    Returns True if a strategy switch cut the sleep short. The event is cleared at the
+    top of the brew loop, never here -- see brew_step_task.
     """
-    remaining = seconds
+    # The one choke point every brew-loop sleep passes through, so a dry run's
+    # time scaling is applied exactly here. Chunking is deliberately not scaled:
+    # an accelerated run then heartbeats more often per simulated second, never
+    # less, so the hardware watchdog can only ever be fed too eagerly.
+    remaining = seconds / _time_scale
     while remaining > 0:
         chunk = min(HEARTBEAT_INTERVAL_SECONDS, remaining)
-        await asyncio.sleep(chunk)
+        if strategy_switch_event is not None:
+            try:
+                await asyncio.wait_for(strategy_switch_event.wait(), timeout=chunk)
+                # Woken early. Heartbeat before returning so the caller's next valve
+                # command is never the first thing the hardware sees after a gap.
+                await _safe_heartbeat()
+                return True
+            except asyncio.TimeoutError:
+                pass  # wait_for really did consume `chunk` seconds
+        else:
+            await asyncio.sleep(chunk)
         remaining -= chunk
-        try:
-            await asyncio.to_thread(valve.heartbeat)
-        except Exception as e:
-            # Losing the heartbeat is not fatal to the brew loop -- the watchdog
-            # closing the valve is the intended safe outcome.
-            logger.warning(f"Valve heartbeat failed: {e}")
+        await _safe_heartbeat()
+    return False
 
 
-async def brew_step_task(brew_id, strategy):
+async def brew_step_task(brew_id):
     """brew"""
     global cur_brew
+    global strategy_switch_event
+
+    # Created here, not in start_brew: an asyncio.Event waiter is only woken by a
+    # set() on the loop it is parked on, and this task is where the waiting happens.
+    strategy_switch_event = asyncio.Event()
 
     # Heartbeat before touching the valve at all. The loop below opens the valve and
     # only heartbeats after the first sleep chunk, so without this there is a window
@@ -466,37 +630,86 @@ async def brew_step_task(brew_id, strategy):
         logger.warning(f"Initial valve heartbeat failed: {e}")
 
     while brew_id is not None and cur_brew is not None and brew_id == cur_brew.id:
+        # Clear before reading, never after. A switch landing after the read re-sets
+        # the event, so the sleep below short-circuits and the next iteration picks
+        # it up; a switch landing before the read is already in cur_strategy. Clearing
+        # inside sleep_with_heartbeat instead would leave the event set whenever a
+        # switch arrived while this loop was in strategy.step() or a valve call -- the
+        # common case -- and the next sleep would return instantly, firing two valve
+        # commands back to back instead of a valve_interval apart.
+        if strategy_switch_event is not None:
+            strategy_switch_event.clear()
+        strategy = cur_strategy
+        if strategy is None:
+            logger.warning(f"No strategy for brew {brew_id}, ending brew loop")
+            break
         try:
             # Execute valve commands when actively brewing or in error state (to recover)
             if cur_brew.status in (BrewState.BREWING, BrewState.ERROR):
                 # get the current flow rate and weight
                 # Use local buffer first, fallback to InfluxDB during warm-up or if stale
                 if weight_buffer.is_ready() and not weight_buffer.is_stale():
-                    current_flow_rate = weight_buffer.get_flow_rate()
+                    current_flow_rate = _simulated_flow(weight_buffer.get_flow_rate())
                     current_weight = weight_buffer.get_current_weight()
                 else:
                     readings = time_series.get_recent_weight_readings(
                         duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
                         start_time_filter=cur_brew.time_started,
+                        dry_run=cur_brew.dry_run,
                     )
-                    current_flow_rate = (
+                    current_flow_rate = _simulated_flow(
                         time_series.calculate_flow_rate_from_derivatives(readings)
                         if readings
                         else None
                     )
-                    current_weight = time_series.get_current_weight()
-                (valve_command, interval) = strategy.step(
-                    current_flow_rate, current_weight
+                    current_weight = time_series.get_current_weight(
+                        dry_run=cur_brew.dry_run
+                    )
+                if current_flow_rate is not None:
+                    brew_metrics.flow_rate.labels(brew_id=brew_id).set(current_flow_rate)
+                    # getattr: target_flow_rate is on every real strategy, but a
+                    # missing one must never be what fails a brew step.
+                    target = getattr(strategy, "target_flow_rate", None)
+                    if target is not None:
+                        brew_metrics.flow_rate_error.set(target - current_flow_rate)
+
+                (valve_command, interval) = await run_step_with_heartbeat(
+                    strategy, current_flow_rate, current_weight
                 )
+
+                # step() can now take seconds (an LLM-backed strategy blocks on a
+                # network call), so re-check what it was deciding for. Nothing
+                # cancels these tasks -- stop/kill works purely by the brew_id
+                # comparison at the top of the loop -- and asyncio.to_thread is not
+                # cancellable anyway, so without this a brew stopped mid-step would
+                # get one more valve command applied after return_to_start had
+                # already run.
+                if cur_brew is None or cur_brew.id != brew_id:
+                    logger.info(f"Brew {brew_id} ended during strategy step, discarding command")
+                    return
+                # Likewise a strategy switch that landed mid-step: `strategy` was
+                # read before the call, so its decision is stale. Let the next
+                # iteration re-read cur_strategy rather than acting on it.
+                if strategy_switch_event is not None and strategy_switch_event.is_set():
+                    logger.info("Strategy switched during step, discarding stale command")
+                    continue
+
+                # Counted here rather than inside the branches below: there is no
+                # else arm, so a NOOP would never be recorded -- and both discard
+                # guards above have already run, so a dropped command is not counted.
+                brew_metrics.valve_commands.labels(command=valve_command.name).inc()
 
                 if valve_command == ValveCommand.STOP:
                     logger.info(f"Target weight reached, stopping brew {brew_id}")
+                    brew_metrics.brews.labels(outcome="completed").inc()
                     cur_brew.status = BrewState.COMPLETED
                     cur_brew.time_completed = datetime.now(timezone.utc)
                     scale.disconnect()
                     # TODO should just be plain sync i think?
                     await asyncio.to_thread(valve.return_to_start)
                     await asyncio.to_thread(valve.release)
+                    _restore_hardware()
+                    _clear_strategy_state()
                     return
                 elif valve_command == ValveCommand.FORWARD:
                     await asyncio.to_thread(valve.step_forward)
@@ -518,6 +731,11 @@ async def brew_step_task(brew_id, strategy):
             traceback.print_exc()
 
             if cur_brew is not None:
+                # Only on the way in: this loop keeps running while ERROR, so
+                # counting every iteration would turn one flapping brew into
+                # hundreds of failures.
+                if cur_brew.status != BrewState.ERROR:
+                    brew_metrics.brews.labels(outcome="error").inc()
                 cur_brew.status = BrewState.ERROR
                 cur_brew.error_message = str(e)
             await sleep_with_heartbeat(strategy.valve_interval)
@@ -552,6 +770,8 @@ async def start_brew(req: StartBrewRequest | None = None):
     """Start a brew with the given brew ID."""
     global cur_brew
     global scale
+    global cur_strategy
+    global cur_base_params
 
     logger.info(f"brew start request: {req}")
 
@@ -565,9 +785,13 @@ async def start_brew(req: StartBrewRequest | None = None):
             detail={"code": "brew_in_progress", "message": "A brew is already in progress"},
         )
 
+    dry_run = req is not None and req.dry_run
+
     # Refuse before the scale backoff below, so a version mismatch fails immediately
-    # instead of waiting out several reconnect attempts first.
-    compat = check_hardware_compatibility()
+    # instead of waiting out several reconnect attempts first. Skipped for a dry
+    # run: MockValve has no hardware_api_version, so this would 409 every
+    # simulated brew -- and there is no Pi involved to be out of date.
+    compat = {"compatible": True} if dry_run else check_hardware_compatibility()
     if not compat["compatible"]:
         raise HTTPException(
             status_code=409,
@@ -582,9 +806,15 @@ async def start_brew(req: StartBrewRequest | None = None):
             },
         )
 
+    if dry_run:
+        # Swap in simulated devices before the scale check below, which then
+        # succeeds against the simulated scale rather than reaching for the Pi.
+        _install_dry_run_hardware(req.time_scale)
+
     # Try to connect to scale with exponential backoff
     if scale is None or not scale.connected:
-        scale = HttpScale(BREWCTL_HARDWARE_URL)
+        if not dry_run:
+            scale = HttpScale(BREWCTL_HARDWARE_URL)
         if not scale.reconnect_with_backoff():
             raise HTTPException(
                 status_code=503,
@@ -615,6 +845,9 @@ async def start_brew(req: StartBrewRequest | None = None):
                 f"Created strategy: {req.strategy} with params: {req.strategy_params}"
             )
 
+        cur_strategy = strategy
+        cur_base_params = base_params
+
         cur_brew = Brew(
             id=new_id,
             status=BrewState.BREWING,
@@ -622,6 +855,7 @@ async def start_brew(req: StartBrewRequest | None = None):
             target_weight=target_weight,
             vessel_weight=vessel_weight,
             strategy=strategy_type,
+            dry_run=dry_run,
         )
 
         weight_buffer.clear()
@@ -630,10 +864,11 @@ async def start_brew(req: StartBrewRequest | None = None):
         asyncio.create_task(
             collect_scale_data_task(cur_brew.id, BREWCTL_SCALE_READ_INTERVAL)
         )
-        asyncio.create_task(brew_step_task(new_id, strategy))
+        asyncio.create_task(brew_step_task(new_id))
         return StartBrewResponse(status="started", brew_id=cur_brew.id)
     else:
         # This should not be reached due to earlier check, but just in case
+        _restore_hardware()
         raise HTTPException(status_code=409, detail="A brew is already in progress")
 
 
@@ -644,6 +879,11 @@ async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
     global scale
 
     old_id = cur_brew.id
+    # Read before cur_brew is dropped below. Stopping an already-COMPLETED brew is
+    # the normal UI flow once a brew finishes, and the STOP branch of the loop has
+    # already counted that one -- without this guard it counts twice.
+    if cur_brew.status != BrewState.COMPLETED:
+        brew_metrics.brews.labels(outcome="stopped").inc()
     # TODO probably don't want to do this here, could cause some kind of conflict
     # edge case with teardown before anything has happened
     # valve.return_to_start()
@@ -653,6 +893,8 @@ async def stop_brew(brew_id: Annotated[MatchBrewId, Query()]):
     scale.disconnect()
     scale = None
     cur_brew = None
+    _restore_hardware()
+    _clear_strategy_state()
     return {"status": f"valve brew id ${old_id} stopped"}  # Placeholder response
 
 
@@ -689,8 +931,9 @@ async def brew_status():
         readings = time_series.get_recent_weight_readings(
             duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
             start_time_filter=cur_brew.time_started,
+            dry_run=cur_brew.dry_run,
         )
-        current_flow_rate = (
+        current_flow_rate = _simulated_flow(
             time_series.calculate_flow_rate_from_derivatives(readings)
             if readings
             else None
@@ -758,10 +1001,11 @@ async def get_brew_quality(brew_id: str):
         vessel_weight = cur_brew.vessel_weight
         target_flow_rate = BREWCTL_TARGET_FLOW_RATE
         epsilon = BREWCTL_EPSILON
+        dry_run = cur_brew.dry_run
 
         # Get actual final weight from the last reading
         readings = time_series.get_weight_readings_in_range(
-            time_started, time_completed
+            time_started, time_completed, dry_run=dry_run
         )
         if not readings:
             return {"error": "no weight readings found for this brew"}
@@ -773,7 +1017,9 @@ async def get_brew_quality(brew_id: str):
         return {"error": "brew not found or not the current brew"}
 
     # Get flow rates for the entire brew duration
-    flow_rates = time_series.get_flow_rates_for_brew(time_started, time_completed)
+    flow_rates = time_series.get_flow_rates_for_brew(
+        time_started, time_completed, dry_run=dry_run
+    )
 
     if not flow_rates:
         return {"error": "could not calculate flow rates for this brew"}
@@ -829,58 +1075,6 @@ def serialize_status(status: dict) -> dict:
         else:
             result[key] = value
     return result
-
-
-@app.websocket("/ws/brew/status")
-async def websocket_brew_status(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time brew status updates.
-    Clients connect and receive periodic brew status broadcasts.
-    """
-    await websocket.accept()
-    logger.info("WebSocket client connected for brew status")
-
-    try:
-        while True:
-            # Send status update
-            status = await brew_status()
-            serialized = serialize_status(status)
-            await websocket.send_json(serialized)
-
-            await asyncio.sleep(BREWCTL_WS_PUSH_INTERVAL)
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected from brew status")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-
-
-@app.websocket("/ws/health")
-async def websocket_health(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time health status updates.
-    Clients connect and receive periodic component health broadcasts.
-    Separate from brew status to allow different polling intervals.
-    """
-    await websocket.accept()
-    logger.info("WebSocket client connected for health status")
-
-    try:
-        while True:
-            # Get component health status. Offloaded: get_component_health() makes a
-            # blocking InfluxDB ping, and running it inline here stalls the whole event
-            # loop -- every SSE/WS client plus a running brew's step loop and heartbeat.
-            health = await asyncio.to_thread(get_component_health)
-
-            # Add timestamp
-            health["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-            await websocket.send_json(health)
-
-            await asyncio.sleep(BREWCTL_WS_HEALTH_PUSH_INTERVAL)
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected from health status")
-    except Exception as e:
-        logger.error(f"Health WebSocket error: {e}")
 
 
 async def sse_brew_status_generator() -> AsyncGenerator[str, None]:
@@ -991,6 +1185,119 @@ async def resume_brew():
         raise HTTPException(status_code=400, detail="no paused brew to resume")
 
 
+@app.post("/api/brew/strategy", response_model=BrewCommandResponse)
+async def switch_strategy(req: SwitchStrategyRequest):
+    """Swap the running brew's control strategy without stopping the brew.
+
+    The valve is left exactly where it is -- that is the point: stopping and
+    restarting returns the valve to start and throws away the operating point. The
+    new strategy is warm-started from the current valve position and flow rate, and
+    the switch is recorded on the brew and annotated in InfluxDB so the brew can be
+    segmented by strategy afterwards.
+
+    Note that the new strategy's scale_interval is inert: the scale collection task
+    is started once with BREWCTL_SCALE_READ_INTERVAL and is not restarted here.
+    """
+    global cur_brew
+    global cur_strategy
+    global _last_strategy_switch_at
+
+    if cur_brew is None or cur_brew.status not in (
+        BrewState.BREWING,
+        BrewState.PAUSED,
+        BrewState.ERROR,
+    ):
+        raise HTTPException(status_code=409, detail="no running brew to switch")
+
+    now = time.monotonic()
+    if (
+        _last_strategy_switch_at is not None
+        and now - _last_strategy_switch_at < STRATEGY_SWITCH_MIN_INTERVAL_SECONDS
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "strategy switched too recently; wait "
+                f"{STRATEGY_SWITCH_MIN_INTERVAL_SECONDS}s between switches"
+            ),
+        )
+
+    async with _strategy_switch_lock:
+        try:
+            new_strategy = create_brew_strategy(
+                req.strategy, req.strategy_params, cur_base_params or _get_default_base_params()
+            )
+        except ValueError as e:
+            # Unknown strategy type or unusable params -- the caller's fault, not ours.
+            raise HTTPException(status_code=400, detail=str(e))
+
+        brew_id = cur_brew.id
+        from_strategy = cur_brew.strategy
+
+        # Blocking HTTP to the hardware service, so it must not run on the loop.
+        valve_position = await asyncio.to_thread(valve.get_position)
+
+        # The only suspension point in this critical section, so re-check that the
+        # brew we are about to mutate is still the one that was running.
+        if cur_brew is None or cur_brew.id != brew_id:
+            raise HTTPException(status_code=409, detail="brew ended during switch")
+
+        if weight_buffer.is_ready() and not weight_buffer.is_stale():
+            flow_rate = _simulated_flow(weight_buffer.get_flow_rate())
+        else:
+            # None is a valid warm-start input; falling back to an InfluxDB derivative
+            # query here would make the endpoint as slow as the brew loop's slow path.
+            flow_rate = None
+
+        new_strategy.warm_start(valve_position, flow_rate)
+
+        cur_brew.strategy_switches.append(
+            StrategySwitch(
+                timestamp=datetime.now(timezone.utc),
+                from_strategy=from_strategy,
+                to_strategy=req.strategy,
+                strategy_params=req.strategy_params,
+                valve_position=valve_position,
+                flow_rate=flow_rate,
+            )
+        )
+        cur_brew.strategy = req.strategy
+        cur_strategy = new_strategy
+        # The new strategy may have a different target, so the old error is
+        # meaningless and would otherwise sit there for a whole valve interval.
+        brew_metrics.flow_rate_error.set(0)
+        _last_strategy_switch_at = now
+        if strategy_switch_event is not None:
+            # None until brew_step_task first runs; the loop reads cur_strategy on
+            # its next iteration regardless, this only cuts the sleep short.
+            strategy_switch_event.set()
+
+        logger.info(
+            f"Brew {brew_id} strategy switched {from_strategy} -> {req.strategy} "
+            f"at valve position {valve_position}, flow rate {flow_rate}"
+        )
+
+    try:
+        await asyncio.to_thread(
+            time_series.write_strategy_switch,
+            brew_id,
+            str(from_strategy.value if hasattr(from_strategy, "value") else from_strategy),
+            str(req.strategy.value),
+            valve_position,
+            flow_rate,
+            cur_brew.dry_run if cur_brew is not None else False,
+        )
+    except Exception as e:
+        # An annotation is bookkeeping. Never let it abort a switch that already took.
+        logger.warning(f"Failed to annotate strategy switch: {e}")
+
+    return BrewCommandResponse(
+        status="strategy_switched",
+        brew_id=brew_id,
+        brew_state=cur_brew.status if cur_brew is not None else None,
+    )
+
+
 @app.post("/api/brew/kill", response_model=BrewCommandResponse)
 async def kill_brew():
     """Forcefully kill the current brew."""
@@ -998,10 +1305,13 @@ async def kill_brew():
     logger.info(f"{cur_brew.id if cur_brew else None} will be killed")
     if cur_brew is not None:
         old_id = cur_brew.id
+        brew_metrics.brews.labels(outcome="killed").inc()
         cur_brew = None
         await asyncio.to_thread(valve.return_to_start)
         await asyncio.to_thread(valve.release)
         scale.disconnect()
+        _restore_hardware()
+        _clear_strategy_state()
         return BrewCommandResponse(
             status="killed", brew_id=old_id, brew_state=BrewState.IDLE
         )
@@ -1017,13 +1327,14 @@ def read_flow_rate():
     """Read the current flow rate from the time series."""
     global cur_brew
     if weight_buffer.is_ready() and not weight_buffer.is_stale():
-        flow_rate = weight_buffer.get_flow_rate()
+        flow_rate = _simulated_flow(weight_buffer.get_flow_rate())
     elif cur_brew is not None and cur_brew.time_started is not None:
         readings = time_series.get_recent_weight_readings(
             duration_seconds=BREWCTL_VALVE_INTERVAL_SECONDS,
             start_time_filter=cur_brew.time_started,
+            dry_run=cur_brew.dry_run,
         )
-        flow_rate = (
+        flow_rate = _simulated_flow(
             time_series.calculate_flow_rate_from_derivatives(readings)
             if readings
             else None

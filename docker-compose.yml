@@ -22,6 +22,15 @@ services:
       - BREWCTL_INFLUXDB_URL=${BREWCTL_INFLUXDB_URL}
       - BREWCTL_INFLUXDB_ORG=${BREWCTL_INFLUXDB_ORG}
       - BREWCTL_VALVE_INTERVAL_SECONDS=${BREWCTL_VALVE_INTERVAL_SECONDS}
+      # Bare names: passed through only when set, so the api's own defaults stay the
+      # single source of truth rather than being restated here. deploy/control/app.yaml
+      # is where they are set for production.
+      - BREWCTL_VESSEL_WEIGHT_GRAMS
+      - BREWCTL_TARGET_WEIGHT_GRAMS
+      # AIBrewStrategy. Any OpenAI-compatible server; defaults to a local Ollama,
+      # which from inside this container is the host, not localhost.
+      - BREWCTL_LLM_BASE_URL=${BREWCTL_LLM_BASE_URL:-http://host.docker.internal:11434}
+      - BREWCTL_LLM_MODEL=${BREWCTL_LLM_MODEL:-llama3.2:3b}
     ports:
       - "8000:8000"
     volumes:

@@ -2,10 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useBrewStatus } from './useBrewStatus';
 
-// Mock WebSocket at module level - simpler approach
-// Since WebSocket mocking is complex, we only test the basic API and initial state
+// The hook opens an EventSource on mount; stub the URL so it points nowhere
+// real. Only the basic API and initial state are covered here.
 vi.mock('./constants', () => ({
-  wsUrl: vi.fn(() => 'ws://localhost:8000/ws/brew/status'),
+  sseUrl: vi.fn(() => 'http://localhost:8000/sse/brew/status'),
+  healthSseUrl: vi.fn(() => 'http://localhost:8000/sse/health'),
 }));
 
 describe('useBrewStatus', () => {

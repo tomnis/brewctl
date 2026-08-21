@@ -33,3 +33,23 @@ export async function nudgeClose(): Promise<void> {
     throw new Error(`Failed to nudge close: ${response.statusText}`);
   }
 }
+
+export async function switchStrategy(
+  strategy: string,
+  strategyParams: Record<string, string>,
+): Promise<void> {
+  const response = await fetch(`${apiUrl}/brew/strategy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ strategy, strategy_params: strategyParams }),
+  });
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new Error("Strategy switched too recently, please wait");
+    }
+    if (response.status === 409) {
+      throw new Error("No running brew to switch");
+    }
+    throw new Error(`Failed to switch strategy: ${response.statusText}`);
+  }
+}

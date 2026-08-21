@@ -128,3 +128,59 @@ def test_brew_status_with_active_brew(client):
     # Clean up
     response = client.post("/api/brew/kill")
     assert response.status_code == 200
+
+
+def _server(client):
+    """The patched server module. client must be requested first so HttpScale and
+    HttpValve are mocked before the import binds them."""
+    import brewctl.api.server as server_module
+
+    return server_module
+
+
+def test_vessel_weight_defaults_to_config_when_omitted(client):
+    """Switching vessels must be an env var change, not a code change.
+
+    The frontend deliberately does not send vessel_weight, so an omitted field has to
+    resolve to BREWCTL_VESSEL_WEIGHT_GRAMS. Note the default is baked into the pydantic
+    field when core.model is imported, so the env var only takes effect on restart --
+    which is why this asserts the chain rather than patching a module attribute.
+    """
+    from brewctl.core.config import BREWCTL_VESSEL_WEIGHT_GRAMS
+    from brewctl.core.model import StartBrewRequest
+
+    # model_fields, not StartBrewRequest(): the model carries a stray @dataclass
+    # decorator, whose __init__ demands every field positionally.
+    assert (
+        StartBrewRequest.model_fields["vessel_weight"].default
+        == BREWCTL_VESSEL_WEIGHT_GRAMS
+    )
+
+    server = _server(client)
+    response = client.post("/api/brew/start", json={"target_weight": 1000})
+    assert response.status_code == 200
+    assert server.cur_brew.vessel_weight == BREWCTL_VESSEL_WEIGHT_GRAMS
+
+
+
+def test_explicit_vessel_weight_still_wins(client):
+    """API callers can still override per brew."""
+    server = _server(client)
+
+    response = client.post(
+        "/api/brew/start", json={"target_weight": 1000, "vessel_weight": 412}
+    )
+    assert response.status_code == 200
+    assert server.cur_brew.vessel_weight == 412
+
+
+def test_brew_status_exposes_vessel_weight(client):
+    """The UI cannot show progress against coffee without it."""
+    response = client.post(
+        "/api/brew/start", json={"target_weight": 1000, "vessel_weight": 412}
+    )
+    assert response.status_code == 200
+
+    response = client.get("/api/brew/status")
+    assert response.status_code == 200
+    assert response.json()["vessel_weight"] == 412

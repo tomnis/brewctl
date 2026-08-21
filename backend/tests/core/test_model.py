@@ -145,6 +145,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.05,
             current_weight=50.0
@@ -165,6 +166,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.05,
             current_weight=50.0
@@ -189,6 +191,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.0,
             current_weight=0.0
@@ -202,6 +205,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.0,
             current_weight=25.0
@@ -215,6 +219,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.0,
             current_weight=100.0
@@ -230,6 +235,7 @@ class TestBrewStatus:
             brew_strategy=BrewStrategyType.DEFAULT,
             time_started=timestamp,
             target_weight=100.0,
+            vessel_weight=20.0,
             timestamp=timestamp,
             current_flow_rate=0.0,
             current_weight=0.0

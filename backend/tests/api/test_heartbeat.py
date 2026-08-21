@@ -46,3 +46,89 @@ def test_heartbeat_failure_does_not_break_the_loop(heartbeat_valve):
     asyncio.run(server_module.sleep_with_heartbeat(0.03))
 
     assert valve.heartbeat.call_count >= 2
+
+
+def test_run_step_with_heartbeat_feeds_watchdog_during_a_slow_step(heartbeat_valve):
+    """A strategy that blocks for seconds must not starve the hardware watchdog."""
+    import time
+
+    server_module, valve = heartbeat_valve
+
+    class SlowStrategy:
+        valve_interval = 90
+
+        def step(self, flow_rate, weight):
+            time.sleep(0.05)
+            return ValveCommand.NOOP, 7
+
+    from brewctl.core.model import ValveCommand
+
+    result = asyncio.run(
+        server_module.run_step_with_heartbeat(SlowStrategy(), 0.05, 100.0)
+    )
+
+    assert result == (ValveCommand.NOOP, 7)
+    assert valve.heartbeat.call_count >= 2
+
+
+def test_run_step_with_heartbeat_propagates_exceptions(heartbeat_valve):
+    """Strategy errors must still reach brew_step_task's ERROR handler."""
+    server_module, _valve = heartbeat_valve
+
+    class ExplodingStrategy:
+        def step(self, flow_rate, weight):
+            raise RuntimeError("strategy blew up")
+
+    with pytest.raises(RuntimeError, match="strategy blew up"):
+        asyncio.run(
+            server_module.run_step_with_heartbeat(ExplodingStrategy(), 0.05, 100.0)
+        )
+
+
+def test_brew_stopped_during_step_applies_no_valve_command(heartbeat_valve, mock_time_series):
+    """
+    A brew that ends while step() is in flight must not move the valve afterwards.
+
+    Nothing cancels the brew tasks and asyncio.to_thread is not cancellable, so the
+    step result outlives the brew. Applying it would drive the valve after
+    return_to_start had already run.
+    """
+    import threading
+    import time
+    import uuid
+
+    from brewctl.core.model import Brew, BrewState, ValveCommand
+
+    server_module, valve = heartbeat_valve
+    entered = threading.Event()
+
+    class SlowForwardStrategy:
+        valve_interval = 90
+
+        def step(self, flow_rate, weight):
+            entered.set()
+            time.sleep(0.2)
+            return ValveCommand.FORWARD, 1
+
+    from datetime import datetime, timezone
+
+    brew = Brew(
+        id=str(uuid.uuid4()),
+        status=BrewState.BREWING,
+        time_started=datetime.now(timezone.utc),
+        vessel_weight=229,
+        target_weight=1337,
+    )
+    server_module.cur_brew = brew
+    server_module.cur_strategy = SlowForwardStrategy()
+
+    async def scenario():
+        task = asyncio.create_task(server_module.brew_step_task(brew.id))
+        # Stop the brew while the strategy is still thinking.
+        await asyncio.to_thread(entered.wait, 2.0)
+        server_module.cur_brew = None
+        await asyncio.wait_for(task, timeout=5.0)
+
+    asyncio.run(scenario())
+
+    assert valve.step_forward.call_count == 0

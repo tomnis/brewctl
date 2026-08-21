@@ -54,6 +54,7 @@ def mock_time_series():
         (now, 102.0),
     ]
     ts.calculate_flow_rate_from_derivatives.return_value = 5.0
+    ts.write_strategy_switch.return_value = None
     return ts
 
 
@@ -75,7 +76,20 @@ def client(mock_scale, mock_valve, mock_time_series):
 
     import brewctl.api.server as server_module
 
+    _reset_server_globals(server_module)
+
+
+def _reset_server_globals(server_module):
+    """Clear every piece of brew state the module keeps.
+
+    strategy_switch_event especially: it is created on whichever loop ran the brew
+    task, so a leftover one makes the *next* test's sleep wait on a dead loop.
+    """
     server_module.cur_brew = None
+    server_module.cur_strategy = None
+    server_module.cur_base_params = None
+    server_module.strategy_switch_event = None
+    server_module._last_strategy_switch_at = None
 
 
 @pytest.fixture
@@ -83,6 +97,19 @@ def reset_globals():
     """Reset global state before each test."""
     import brewctl.api.server as server_module
 
-    server_module.cur_brew = None
+    _reset_server_globals(server_module)
     yield
-    server_module.cur_brew = None
+    _reset_server_globals(server_module)
+
+
+@pytest.fixture(autouse=True)
+def reset_prometheus_metrics():
+    """Metrics are process-global like every other module global here.
+
+    Autouse rather than hung off `client`: plenty of tests take `reset_globals`
+    alone, and a counter that carried over would make delta assertions lie.
+    """
+    from brewctl.core import metrics
+
+    metrics.reset_metrics()
+    yield

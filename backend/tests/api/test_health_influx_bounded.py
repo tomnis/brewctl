@@ -86,7 +86,7 @@ def test_influx_down_alone_never_reaches_unhealthy(
 
 
 def test_component_health_reports_influx_down(client, mock_time_series):
-    # /sse/health and /ws/health go through get_component_health(), which had the
+    # /sse/health goes through get_component_health(), which had the
     # same swallowed-False bug.
     from brewctl.api.server import get_component_health
 

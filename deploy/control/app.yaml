@@ -84,6 +84,13 @@ services:
       BREWCTL_TARGET_WEIGHT_GRAMS: "1337"
       BREWCTL_VESSEL_WEIGHT_GRAMS: "229"
 
+      # AIBrewStrategy talks to Ollama on the ODROID. Any OpenAI-compatible
+      # server works -- swapping to llama.cpp or IPEX-LLM is this URL and
+      # nothing else. Check reachability from *inside* the api container, not
+      # from the host; those are different network paths.
+      BREWCTL_LLM_BASE_URL: "http://REPLACE_ME:11434"
+      BREWCTL_LLM_MODEL: "llama3.2:3b"
+
       # Both empty on purpose, and both are required. The api serves the UI itself
       # at /app, so requests are same-origin and CORS never applies.
       #

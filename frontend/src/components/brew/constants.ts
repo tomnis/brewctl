@@ -1,4 +1,4 @@
-// Derive WebSocket URL from API URL (replace /api with empty string, change http to ws)
+// Service URL construction.
 //
 // In production the api service serves this bundle itself at /app, so the API is
 // same-origin and needs no configuration. The env var is the dev-time override,
@@ -7,27 +7,40 @@ const getApiUrl = () =>
   (import.meta.env.BREWCTL_FRONTEND_API_URL as string) || `${window.location.origin}/api`;
 export const apiUrl = getApiUrl();
 
-// WebSocket URL for real-time brew status updates
-export const wsUrl = () => {
-  const api = getApiUrl();
-  return api.replace('/api', '').replace('http://', 'ws://').replace('https://', 'wss://');
+export type QueryParams = Record<string, string | number | boolean | undefined | null>;
+
+// The origin + path the api is mounted under, i.e. apiUrl with its trailing
+// "/api" segment removed. Built with the URL API rather than by rewriting the
+// string: a plain `.replace('/api', '')` also eats the first "/api" inside a
+// host or a mount path (`https://api.example/api` loses the wrong one), and it
+// has nowhere to put query parameters.
+const serviceRoot = (): URL => {
+  const url = new URL(getApiUrl(), window.location.origin);
+  url.pathname = url.pathname.replace(/\/api\/?$/, "");
+  url.search = "";
+  url.hash = "";
+  return url;
 };
 
-// WebSocket URL for health status updates
-export const healthWsUrl = () => {
-  return `${wsUrl()}/ws/health`;
+// Build an absolute URL under the service root. `path` is rooted at the service
+// (leading slash optional); `params` are appended as a query string, skipping
+// undefined/null so callers can pass optional values straight through.
+export const serviceUrl = (path: string, params?: QueryParams): string => {
+  const url = serviceRoot();
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value !== undefined && value !== null) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
 };
 
 // SSE URL for real-time brew status updates
-export const sseUrl = () => {
-  const api = getApiUrl();
-  return api.replace('/api', '') + '/sse/brew/status';
-};
+export const sseUrl = (params?: QueryParams) => serviceUrl("/sse/brew/status", params);
 
 // SSE URL for health status updates
-export const healthSseUrl = () => {
-  return `${sseUrl().replace('/sse/brew/status', '/sse/health')}`;
-};
+export const healthSseUrl = (params?: QueryParams) => serviceUrl("/sse/health", params);
 
 export const DEFAULT_FLOW = "0.05";
 export const DEFAULT_VALVE_INTERVAL = "90";
@@ -35,8 +48,13 @@ export const DEFAULT_EPSILON = "0.008";
 export const POLL_INTERVAL_MS = 4000;
 export const DEFAULT_TARGET_WEIGHT = "1337";
 
+// Clock multiplier for dry runs. The backend divides every brew-loop sleep by
+// this, so a multi-hour brew finishes in a couple of minutes; ignored unless
+// dry_run is set.
+export const DRY_RUN_TIME_SCALE = 60;
+
 // Strategy types (must match backend BrewStrategyType enum)
-export type StrategyType = "default" | "pid" | "kalman_pid" | "smith_predictor_advanced" | "adaptive_gain_scheduling" | "mpc";
+export type StrategyType = "default" | "pid" | "kalman_pid" | "smith_predictor_advanced" | "adaptive_gain_scheduling" | "mpc" | "ai";
 
 export interface StrategyParam {
   name: string;
@@ -342,6 +360,62 @@ export const STRATEGIES: Strategy[] = [
         placeholder: "0.5",
         defaultValue: "0.5",
         description: "Weight on control rate for smoothness",
+      },
+    ],
+  },
+  {
+    id: "ai",
+    name: "AI (LLM-Guided)",
+    description: "Asks a local language model what the valve should do next. Educational demo.",
+    params: [
+      {
+        name: "model",
+        label: "Model",
+        placeholder: "llama3.2:3b",
+        defaultValue: "llama3.2:3b",
+        description: "Ollama model tag; gemma2:2b is the faster fallback",
+      },
+      {
+        name: "base_url",
+        label: "Base URL",
+        placeholder: "http://localhost:11434",
+        defaultValue: "",
+        description: "OpenAI-compatible server; blank uses the server default",
+      },
+      {
+        name: "temperature",
+        label: "Temperature",
+        placeholder: "0",
+        defaultValue: "0",
+        description: "0 for repeatable decisions",
+      },
+      {
+        name: "timeout_seconds",
+        label: "Request Timeout (s)",
+        placeholder: "15",
+        defaultValue: "15",
+        description: "Per-call timeout before falling back to the default strategy",
+      },
+      {
+        name: "history_points",
+        label: "History Points",
+        placeholder: "12",
+        defaultValue: "12",
+        description: "Recent readings shown to the model as context",
+      },
+      {
+        name: "min_interval",
+        label: "Min Interval (s)",
+        placeholder: "5",
+        defaultValue: "5",
+        description: "Floor on the wait the model asks for",
+      },
+      {
+        name: "max_interval",
+        label: "Max Interval (s)",
+        placeholder: "90",
+        defaultValue: "90",
+        description: "Ceiling on the wait the model asks for",
       },
     ],
   },
