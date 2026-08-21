@@ -132,9 +132,14 @@ services:
       # reports on the static frontend bundle rather than on the api.
       # Checks the api itself, not the Pi: the api must stay up and reporting even
       # when the hardware service is unreachable, because that is how you find out.
+      #
+      # timeout=4 on urlopen is deliberate: without it the probe has no bound of its
+      # own and relies on Docker SIGKILLing it at the 5s timeout below, which reads as
+      # an unhealthy api rather than a slow dependency. The api's InfluxDB check is
+      # separately bounded at 2s (see InfluxDBTimeSeries health_timeout).
       test:
         - CMD-SHELL
-        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""
+        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)\""
       interval: 30s
       timeout: 5s
       retries: 3

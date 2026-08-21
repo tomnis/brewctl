@@ -22,6 +22,9 @@ def _make_ts():
     ts.org = "fake"
     ts.bucket = "fake"
     ts.influxdb = MagicMock()
+    # Separate short-timeout client used only by healthcheck(); __init__ is bypassed
+    # here, so it has to be set explicitly.
+    ts._health_client = MagicMock()
     return ts
 
 
@@ -70,14 +73,41 @@ class TestHealthcheck:
     def test_healthcheck_returns_true_when_ping_succeeds(self):
         """healthcheck returns True when InfluxDB ping succeeds."""
         ts = _make_ts()
-        ts.influxdb.ping.return_value = True
+        ts._health_client.ping.return_value = True
         assert ts.healthcheck() is True
 
     def test_healthcheck_returns_false_when_ping_fails(self):
         """healthcheck returns False when InfluxDB ping fails."""
         ts = _make_ts()
-        ts.influxdb.ping.return_value = False
+        ts._health_client.ping.return_value = False
         assert ts.healthcheck() is False
+
+    def test_healthcheck_uses_the_short_timeout_client(self):
+        """
+        healthcheck must not touch the 30s query client.
+
+        /api/health is probed with a 5s container timeout and gated on a 10s curl
+        during deploys, so inheriting the query timeout meant a slow InfluxDB failed
+        the probe and the deploy.
+        """
+        ts = _make_ts()
+        ts._health_client.ping.return_value = True
+
+        ts.healthcheck()
+
+        ts._health_client.ping.assert_called_once()
+        ts.influxdb.ping.assert_not_called()
+
+    def test_health_client_is_built_with_a_short_timeout(self):
+        """The health client's timeout is bounded well under the 5s probe budget."""
+        with patch("brewctl.api.time_series.InfluxDBClient") as client_cls:
+            InfluxDBTimeSeries(
+                url="http://fake", token="fake", org="fake", bucket="fake"
+            )
+
+        timeouts = [call.kwargs["timeout"] for call in client_cls.call_args_list]
+        assert len(timeouts) == 2
+        assert min(timeouts) <= 2_000
 
 
 class TestWriteScaleData:
@@ -493,12 +523,17 @@ class TestInfluxDBTimeSeriesInitialization:
                 bucket="my-bucket"
             )
             
-            mock_client.assert_called_once()
-            call_kwargs = mock_client.call_args[1]
+            # Two clients: the query/write client and a short-timeout health client.
+            assert mock_client.call_count == 2
+            call_kwargs = mock_client.call_args_list[0][1]
             assert call_kwargs['url'] == "http://localhost:8086"
             assert call_kwargs['token'] == "my-token"
             assert call_kwargs['org'] == "my-org"
             assert call_kwargs['timeout'] == 30000  # default
+
+            health_kwargs = mock_client.call_args_list[1][1]
+            assert health_kwargs['url'] == "http://localhost:8086"
+            assert health_kwargs['timeout'] == 2000  # default health_timeout
 
 
 class TestCalculateFlowRateFromDerivatives:
