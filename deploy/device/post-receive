@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# Git hook for the Pi's bare repo. Install to ~/coldbrewer.git/hooks/post-receive.
+#
+# Checks out the ref that was actually pushed, refreshes dependencies, and
+# restarts the service.
+#
+# It used to run a bare `checkout -f`, which checks out the bare repo's HEAD --
+# a pointer set once by hand at setup. Push any other branch and the push
+# reported success, the refs really did update, and the Pi checked out and
+# restarted on the OLD branch's code. Nothing surfaced it: the box stayed frozen
+# at whatever HEAD pointed at while every later deploy also reported success.
+# `make deploy-device` pushes the current branch, so the pushed ref is the intent.
+#
+# HEAD is moved to follow, which keeps the box self-describing: `symbolic-ref
+# HEAD` on the bare repo answers "what is deployed" without consulting this file.
+
+set -euo pipefail
+
+GIT_DIR="$HOME/coldbrewer.git"
+TARGET="$HOME/coldbrewer"
+
+log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+ZERO=0000000000000000000000000000000000000000
+
+# stdin is one "<old> <new> <ref>" line per updated ref.
+branches=()
+while read -r _old new ref; do
+    # Tags and other refs do not describe a deployable tree.
+    [[ "$ref" == refs/heads/* ]] || continue
+    # An all-zero new sha is a branch deletion; there is nothing to check out.
+    [[ "$new" == "$ZERO" ]] && continue
+    branches+=("$ref")
+done
+
+if (( ${#branches[@]} == 0 )); then
+    log "No branch updates in this push -- nothing to deploy"
+    exit 0
+fi
+
+current_head=$(git --git-dir="$GIT_DIR" symbolic-ref HEAD 2>/dev/null || true)
+
+if (( ${#branches[@]} == 1 )); then
+    target_ref="${branches[0]}"
+else
+    # Several branches at once: the intent is genuinely ambiguous, and guessing
+    # here would resurrect the exact bug this hook exists to kill. If one of them
+    # is the branch already deployed, that is a re-deploy and unambiguous;
+    # otherwise refuse. Refusing is safe: refs are already updated, but the
+    # service has not been touched, so the running code is still the last known
+    # good one.
+    target_ref=""
+    for ref in "${branches[@]}"; do
+        [[ "$ref" == "$current_head" ]] && target_ref="$ref"
+    done
+    [[ -n "$target_ref" ]] || die "pushed ${#branches[@]} branches (${branches[*]}) and none is the deployed one (${current_head:-<unset>}). Nothing was deployed -- push one branch."
+    warn "Pushed ${#branches[@]} branches; deploying the one already checked out: $target_ref"
+fi
+
+if [[ -n "$current_head" && "$target_ref" != "$current_head" ]]; then
+    # Loud: this changes what the box runs from here on, not just this deploy.
+    warn "Deploy branch changed: ${current_head#refs/heads/} -> ${target_ref#refs/heads/}"
+fi
+
+mkdir -p "$TARGET"
+log "Deploying ${target_ref#refs/heads/} to $(hostname)..."
+# Naming the branch also moves HEAD to it, which is what keeps the bare repo's
+# HEAD an honest record of what is deployed.
+git --work-tree="$TARGET" --git-dir="$GIT_DIR" checkout -f "${target_ref#refs/heads/}"
+log "Checked out $(git --git-dir="$GIT_DIR" rev-parse --short HEAD) (${target_ref#refs/heads/})"
+
+# --deps-only: refresh the venv and restart. Unit/env/sudoers changes still need
+# a manual `./deploy/device/install.sh`, since those touch /etc and want eyes on them.
+#
+# The directory name is resolved rather than hardcoded because this file lives in
+# ~/coldbrewer.git/hooks/ as a copy, so it can be older than the tree it just
+# checked out. It ran after `checkout -f`, so a hardcoded path that the pushed
+# tree has renamed away fails here: refs advanced, the new tree is on disk, and
+# the venv refresh and unit restart never happen -- the box keeps serving old
+# code with new source under it. The `pi` arm covers the deploy/pi ->
+# deploy/device rename and can go once a deploy has succeeded on the new name.
+for d in device pi; do
+    if [[ -x "$TARGET/deploy/$d/install.sh" ]]; then
+        exec "$TARGET/deploy/$d/install.sh" --deps-only
+    fi
+done
+die "no install.sh under $TARGET/deploy/{device,pi} -- checked out $(git --git-dir="$GIT_DIR" rev-parse --short HEAD) but could not refresh deps or restart the service"

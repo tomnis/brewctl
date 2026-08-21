@@ -1,4 +1,4 @@
-# API service (BREWCTL_MODE=api). Runs in Docker on the NAS.
+# API service (BREWCTL_MODE=api). Runs in Docker on the control host.
 # Replaces the old backend.txt. No device libraries -- the api reaches hardware
 # over HTTP/SSE only.
 -r base.txt

@@ -1,21 +1,18 @@
-# brewctl on TrueNAS -- the deployment manifest.
+# the deployment manifest.
 #
-# This file plus deploy/nas/image.tag IS the desired state. `PUT
+# This file plus deploy/control/image.tag IS the desired state. `PUT
 # /api/v2.0/app/id/brewctl` takes a custom app's entire compose config as
-# `custom_compose_config_string`, so deploy/nas/apply.sh posts this file with
+# `custom_compose_config_string`, so deploy/control/apply.sh posts this file with
 # exactly one substitution made (@IMAGE@) and nothing else.
 #
 # This file is the *shape* of the deployment and changes rarely; image.tag is the
 # deploy and changes every time. Rollback is `git revert` of the commit that
 # bumped image.tag.
 #
-#   ./deploy/nas/apply.sh deploy/nas/app.yaml
-#
-# The app must be created once through the TrueNAS Custom App UI before apply.sh
-# can update it -- PUT is update, not create.
+#   ./deploy/control/apply.sh deploy/control/app.yaml
 #
 # Only the api runs here. The hardware service runs bare metal on the Pi and is
-# deployed by hand with `make deploy-pi`; it is never containerised.
+# deployed by hand with `make deploy-device`; it is never containerised.
 #
 # NOTE: literal values only, no ${VAR} interpolation. A Custom App has no .env
 # beside this file, so `${VAR}` would expand to empty and `${VAR:-default}` would
@@ -23,7 +20,7 @@
 # The consequence is that this file serves exactly one environment. That is fine.
 #
 # The single exception is `@IMAGE@`, which apply.sh substitutes from
-# deploy/nas/image.tag *before* the PUT, so what TrueNAS stores is still literal.
+# deploy/control/image.tag *before* the PUT, so what TrueNAS stores is still literal.
 # A distinct sigil rather than ${IMAGE} on purpose: it cannot be mistaken for
 # compose interpolation, and apply.sh refuses to apply a manifest where it
 # survives rendering.
@@ -32,7 +29,7 @@ services:
   # The service name is load-bearing: Traefik's defaultRule on this host builds
   # the hostname from it, so this key is what makes brewctl.catacombs.local route.
   brewctl:
-    # Rendered from deploy/nas/image.tag, which is where deploys happen and where
+    # Rendered from deploy/control/image.tag, which is where deploys happen and where
     # the pinning rationale lives. Nothing to edit here to deploy.
     #
     # pull_policy: never because there is no registry -- the tag is local to this
@@ -47,23 +44,26 @@ services:
     ports:
       - "8000:8000"
 
-    # Opts this container in to Traefik's Docker provider. The published port
-    # above stays: it is what apply.sh's health gate and the container healthcheck
-    # both probe, and losing it would make a deploy unverifiable.
-    # enable=true is the whole opt-in. Traefik's defaultRule on this host is
-    #   HostRegexp(`^{{ index .Labels "com.docker.compose.service" }}.catacombs.(lan|local)$`)
+    # enable=true is the whole opt-in, and the published port above stays: it is
+    # what apply.sh's health gate and the container healthcheck both probe, so
+    # losing it would make a deploy unverifiable.
+    #
     # so the route is derived from the *compose service name* above -- which is
-    # why that key is `brewctl` and not `api`. Naming it `api` produced a router
-    # for api.catacombs.local and a Traefik 404 on brewctl.catacombs.local, which
-    # is indistinguishable from an application 404.
+    # why that key is `brewctl` and not `api`.
     labels:
       - traefik.enable=true
 
-    # Traefik has to share a network with this container to reach it -- the
-    # label alone only opts in to discovery, and a router pointing at an
-    # unreachable backend is a 502, not a startup error.
     networks:
       - catacombs
+
+    dns:
+      - 172.16.8.53
+
+    # Belt and braces for the one name a brew actually depends on. /etc/hosts is
+    # consulted before any resolver, so InfluxDB stays reachable even if dns
+    # is restarting -- a Pi-hole update mid-brew would otherwise stop weight writes
+    extra_hosts:
+      - "influxdb.catacombs.local:192.168.0.69"
 
     environment:
       BREWCTL_MODE: api
@@ -98,13 +98,18 @@ services:
       - influxdb_token
 
     healthcheck:
-      # /api/health, NOT "/" -- the api serves no root route, so probing "/" is a
-      # permanent 404 and the container would never report healthy.
+      # /api/health, NOT "/" -- "/" is a 307 to /app/, so a probe that follows it
+      # reports on the static frontend bundle rather than on the api.
       # Checks the api itself, not the Pi: the api must stay up and reporting even
       # when the hardware service is unreachable, because that is how you find out.
+      #
+      # timeout=4 on urlopen is deliberate: without it the probe has no bound of its
+      # own and relies on Docker SIGKILLing it at the 5s timeout below, which reads as
+      # an unhealthy api rather than a slow dependency. The api's InfluxDB check is
+      # separately bounded at 2s (see InfluxDBTimeSeries health_timeout).
       test:
         - CMD-SHELL
-        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""
+        - "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)\""
       interval: 30s
       timeout: 5s
       retries: 3
@@ -112,15 +117,11 @@ services:
 
 networks:
   catacombs:
-    # Created outside this file and shared with Traefik. external: true means
-    # compose attaches to it rather than creating its own -- and fails loudly if
-    # it is absent, rather than silently making a second, isolated network of
-    # the same name.
     external: true
 
 secrets:
   influxdb_token:
-    # Host path on the NAS, root:root 0400. Created once during bootstrap; not
+    # Path on the control host, root:root 0400. Created once during bootstrap; not
     # managed by this file -- apply.sh does not create it, and a missing or empty
     # file makes the api refuse to start (core/secrets.py raises rather than
     # falling back to an empty token).

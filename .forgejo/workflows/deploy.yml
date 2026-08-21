@@ -1,6 +1,6 @@
-# Promote: apply deploy/nas/app.yaml to the TrueNAS custom app.
+# Promote: apply deploy/control/app.yaml to the TrueNAS custom app.
 #
-# Deploying is a deliberate act -- editing the one line in deploy/nas/image.tag
+# Deploying is a deliberate act -- editing the one line in deploy/control/image.tag
 # and pushing. app.yaml holds the shape of the deployment and changes rarely;
 # image.tag holds what is running and is the whole promotion.
 # That keeps git the record of what is running, and makes rollback `git revert`.
@@ -11,22 +11,15 @@
 # serialize in unspecified order, so the manifest can be applied before its image
 # exists. Keep promotions as their own commit.
 #
-# All the logic lives in deploy/nas/apply.sh, not here: applying is one idempotent
-# PUT of one file, so switching from this CI trigger to a systemd timer on the NAS
+# All the logic lives in deploy/control/apply.sh, not here: applying is one idempotent
+# PUT of one file, so switching from this CI trigger to a systemd timer on the control host
 # (pull-based) later is a change of trigger, not of architecture.
 #
 # Repo config required:
-#   vars.TRUENAS_URL        https://192.168.0.69
-#   vars.BREWCTL_API_URL    http://192.168.0.69:8000
+#   vars.TRUENAS_URL
+#   vars.BREWCTL_API_URL
 #   secrets.TRUENAS_API_KEY API key with APPS_WRITE
-#
-# SECURITY: APPS_WRITE cannot be scoped to a single app and is effectively root on
-# the NAS -- it can create an app with privileged: true. It is acceptable here
-# only because the runner is on that same host and already holds the Docker
-# socket. If CI ever moves off this box, switch to a pull-based reconciler rather
-# than exporting this key.
-
-name: Deploy to TrueNAS
+name: Deploy control service
 
 on:
   push:
@@ -35,9 +28,9 @@ on:
       # image.tag is the promotion: a deploy is a one-line change to that file
       # and nothing else. app.yaml and apply.sh are here too because a change to
       # the deployment's shape, or to how it is applied, also needs applying.
-      - 'deploy/nas/image.tag'
-      - 'deploy/nas/app.yaml'
-      - 'deploy/nas/apply.sh'
+      - 'deploy/control/image.tag'
+      - 'deploy/control/app.yaml'
+      - 'deploy/control/apply.sh'
 
 jobs:
   deploy:
@@ -57,4 +50,4 @@ jobs:
           TRUENAS_URL: ${{ vars.TRUENAS_URL }}
           TRUENAS_API_KEY: ${{ secrets.TRUENAS_API_KEY }}
           BREWCTL_API_URL: ${{ vars.BREWCTL_API_URL }}
-        run: ./deploy/nas/apply.sh deploy/nas/app.yaml
+        run: ./deploy/control/apply.sh deploy/control/app.yaml

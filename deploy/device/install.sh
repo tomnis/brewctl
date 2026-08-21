@@ -5,8 +5,8 @@
 # Idempotent: safe to re-run. Called by hand for the initial setup, and by the
 # post-receive git hook on every deploy.
 #
-#   ./deploy/pi/install.sh              # install or update
-#   ./deploy/pi/install.sh --deps-only  # just refresh the venv (used by the hook)
+#   ./deploy/device/install.sh              # install or update
+#   ./deploy/device/install.sh --deps-only  # just refresh the venv (used by the hook)
 #
 # Existing config at /etc/brewctl/hardware.env is never overwritten.
 
@@ -82,7 +82,7 @@ sudo chmod 0440 "$SUDOERS_PATH"
 sudo visudo -c -f "$SUDOERS_PATH"
 
 # --------------------------------------------------- retire the old services
-# The frontend now runs on the NAS, and the old backend unit ran the pre-split
+# The frontend now runs on the control host, and the old backend unit ran the pre-split
 # monolith out of ~/start_backend.sh. Both are left on disk for rollback.
 for old in coldbrew-frontend.service coldbrew-backend.service; do
     if systemctl list-unit-files --no-legend "$old" 2>/dev/null | grep -q .; then

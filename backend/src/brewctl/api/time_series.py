@@ -13,6 +13,13 @@ class AbstractTimeSeries(ABC):
 
     @abstractmethod
     def healthcheck(self) -> bool:
+        """
+        Report whether the backing store is reachable.
+
+        Returns False on failure rather than raising -- callers must use the return
+        value, not just an except block. Must be bounded well under the container
+        healthcheck's timeout, since this runs on the /api/health path.
+        """
         pass
 
     @abstractmethod
@@ -49,16 +56,24 @@ class AbstractTimeSeries(ABC):
 
 class InfluxDBTimeSeries(AbstractTimeSeries):
 
-    def __init__(self, url, token, org, bucket, timeout=30_000):
+    def __init__(self, url, token, org, bucket, timeout=30_000, health_timeout=2_000):
         self.url = url
         self.token = token
         self.org = org
         self.bucket = bucket
         # logger.info(f"instantiated client: {self.url} {self.org} {self.bucket}")
         self.influxdb = InfluxDBClient(url=url, token=token, org=org, timeout=timeout)
+        # A separate client so the health path can never inherit the 30s query timeout.
+        # /api/health is probed with a 5s container healthcheck timeout and gated on a
+        # 10s curl during deploys; a slow or unreachable InfluxDB used to blow through
+        # both, reporting a healthy api as unhealthy and failing the deploy. Queries and
+        # writes keep the long timeout (and their @retry decorators) -- only this is short.
+        # Constructing a second client is cheap: InfluxDBClient.__init__ does no network I/O.
+        self._health_client = InfluxDBClient(url=url, token=token, org=org, timeout=health_timeout)
 
     def healthcheck(self) -> bool:
-        return self.influxdb.ping()
+        # ping() swallows exceptions and returns False rather than raising.
+        return bool(self._health_client.ping())
 
     def write_scale_data(self, weight: float, battery_pct: int, brew_id: str):
         """Write the current weight to the time series asynchronously."""

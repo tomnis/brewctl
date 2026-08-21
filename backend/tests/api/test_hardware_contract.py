@@ -2,7 +2,7 @@
 Tests for the api <-> hardware version handshake.
 
 The Pi is deployed by hand and never self-updates, so it can lag the api
-indefinitely. These cover the case that makes routine: someone promotes the NAS
+indefinitely. These cover the case that makes routine: someone promotes the control service
 and forgets to push to the Pi.
 """
 
@@ -73,7 +73,7 @@ def test_brew_start_refused_on_version_mismatch(client, server, mock_valve, monk
     # Distinguishable from the other 409 (a brew already running), which the
     # frontend has to tell apart.
     assert detail["code"] == "hardware_version_mismatch"
-    assert "deploy-pi" in detail["message"]
+    assert "deploy-device" in detail["message"]
 
 
 def test_app_stays_up_on_version_mismatch(client, server, mock_valve, monkeypatch):

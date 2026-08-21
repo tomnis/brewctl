@@ -3,7 +3,7 @@
 # UI and the API are same-origin and no CORS or API-URL configuration is needed.
 #
 # The hardware service is NOT built here -- it runs bare metal on the Pi. See
-# deploy/pi/.
+# deploy/device/.
 FROM node:25.3.0-alpine AS node-build
 WORKDIR /app/frontend
 # install npm deps
