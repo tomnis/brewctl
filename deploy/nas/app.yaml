@@ -66,12 +66,34 @@ services:
     networks:
       - catacombs
 
-    # Pi-hole, which is where *.catacombs.lan/.local resolve. Required, not
-    # optional: containers inherit the host's resolvers, and this NAS's
-    # /etc/resolv.conf points at 8.8.8.8 -- so without this the wildcard records
-    # are never consulted and influxdb.catacombs.local does not resolve in here.
+    # Pi-hole, by its address ON THIS NETWORK -- not 192.168.0.69.
+    #
+    # Pointing at the host IP cannot work here, and the reason is worth recording.
+    # Pi-hole publishes :53, so a query from a container is relayed by docker-proxy,
+    # which answers with a *fresh* datagram whose source address is chosen by route
+    # lookup back toward the container: the bridge gateway 172.16.8.1, not the
+    # 192.168.0.69 that was queried. Docker's embedded resolver forwards on a
+    # connected UDP socket, so the kernel discards the mismatched reply and the
+    # resolver returns SERVFAIL. Querying Pi-hole's own address on catacombs skips
+    # docker-proxy entirely, so the reply comes from where it was sent.
+    #
+    # Invisible to casual testing: an unconnected socket accepts the mismatched
+    # reply and looks fine, and `dig @192.168.0.69` from the host works because that
+    # path never crosses the bridge. Test with a *connected* socket.
+    #
+    # 172.16.8.53 is set statically in the Pi-hole app's network config. If that
+    # ever reverts to a dynamic address, this silently breaks -- resolution failures
+    # at brew time, not at deploy time.
     dns:
-      - 192.168.0.69
+      - 172.16.8.53
+
+    # Belt and braces for the one name a brew actually depends on. /etc/hosts is
+    # consulted before any resolver, so InfluxDB stays reachable even while Pi-hole
+    # is restarting -- a Pi-hole update mid-brew would otherwise stop weight writes
+    # for the duration. 192.168.0.69 is the NAS's own LAN address (Traefik), stable,
+    # and Traefik still discovers InfluxDB's container and port dynamically.
+    extra_hosts:
+      - "influxdb.catacombs.local:192.168.0.69"
 
     environment:
       BREWCTL_MODE: api
