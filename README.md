@@ -262,8 +262,18 @@ restarts the unit with `sudo -n` — that needs the sudoers rule only a *full*
 `install.sh` writes. Install the hook first and the very first `make deploy-pi`
 fails.
 
-`post-receive` checks out the bare repo's `HEAD`, not the ref you pushed, so set
-`HEAD` to whatever branch `make deploy-pi` sends or the wrong tree deploys.
+`post-receive` checks out **the ref you pushed** and moves the bare repo's `HEAD`
+to follow, so `make deploy-pi` from a new branch deploys that branch and says so.
+`git -C ~/coldbrewer.git symbolic-ref HEAD` is therefore a record of what is
+deployed, not a setting you have to keep in sync. Push exactly one branch: a push
+carrying several is refused unless one of them is the branch already deployed,
+and tag-only pushes and branch deletions deploy nothing.
+
+This used to be a bare `checkout -f`, which checked out `HEAD` no matter what you
+pushed. Switching branches then meant the push succeeded, the refs really did
+update, and the Pi restarted on the *old* branch's code — with every later deploy
+reporting success too. The `symbolic-ref` line in the setup block above still
+seeds `HEAD` for the very first push, which happens before any hook has run.
 
 `install.sh` creates the venv from `requirements/hardware.txt`, verifies the
 device libraries import, installs `brewctl-hardware.service`, and disables the

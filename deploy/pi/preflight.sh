@@ -185,10 +185,12 @@ for d in "$REPO_DIR" "$HOME/coldbrewer.git"; do
 done
 
 if [[ -d "$HOME/coldbrewer.git" ]]; then
-    # post-receive checks out HEAD, not the ref that was pushed, so HEAD decides
-    # what actually deploys.
+    # post-receive checks out the ref that was pushed and moves HEAD to follow, so
+    # this is a record of what is deployed rather than a setting that decides it.
+    # (It used to check out HEAD regardless of what was pushed, which silently
+    # deployed the wrong branch after a branch switch.)
     head_ref=$(git -C "$HOME/coldbrewer.git" symbolic-ref HEAD 2>/dev/null)
-    info "bare repo HEAD -> ${head_ref:-<unset>} (this is what post-receive checks out)"
+    info "bare repo HEAD -> ${head_ref:-<unset>} (the branch currently deployed)"
     [[ -x "$HOME/coldbrewer.git/hooks/post-receive" ]] \
         && ok "post-receive hook installed and executable" \
         || info "post-receive hook not installed yet"
