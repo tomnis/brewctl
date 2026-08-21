@@ -16,16 +16,9 @@
 # (pull-based) later is a change of trigger, not of architecture.
 #
 # Repo config required:
-#   vars.TRUENAS_URL        https://192.168.0.69
-#   vars.BREWCTL_API_URL    http://192.168.0.69:8000
+#   vars.TRUENAS_URL
+#   vars.BREWCTL_API_URL
 #   secrets.TRUENAS_API_KEY API key with APPS_WRITE
-#
-# SECURITY: APPS_WRITE cannot be scoped to a single app and is effectively root on
-# the NAS -- it can create an app with privileged: true. It is acceptable here
-# only because the runner is on that same host and already holds the Docker
-# socket. If CI ever moves off this box, switch to a pull-based reconciler rather
-# than exporting this key.
-
 name: Deploy to TrueNAS
 
 on:

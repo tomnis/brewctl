@@ -13,4 +13,4 @@
 # Comments and blank lines are ignored; the first real line is the reference.
 # apply.sh substitutes it for @IMAGE@ in app.yaml before the PUT.
 
-catacombs/brewctl:sha-f45bf9b47c79
+catacombs/brewctl:sha-b4a927d45ba0

@@ -1,10 +1,7 @@
 # Test, build, smoke-test, and publish the api image.
 #
-# There is no registry. The image is streamed straight onto the deploy host with
+# The image is streamed straight onto the deploy host with
 # `docker save | ssh docker load`, so the reference in deploy/nas/image.tag is a
-# registry-less local tag (`catacombs/brewctl:sha-...`, org prefix kept so images
-# from different repos on that daemon cannot collide) and the NAS must never be
-# asked to pull it -- image.tag pins an exact tag for that reason.
 #
 # Publishing is not deploying. This workflow only puts the image on the box;
 # promotion is a separate, deliberate commit that bumps the one line in
@@ -12,13 +9,9 @@
 # running and makes rollback a `git revert` -- valid as long as the older image
 # is still loaded on the NAS (see the prune step below).
 #
-# Forgejo is the CI origin: push directly to the `forgejo` remote. A *pull*
-# mirror from GitHub would not work, because mirror syncs bypass the hooks that
-# create workflow runs.
-#
 # Repo config required:
-#   vars.DEPLOY_USER          ssh user on the NAS (needs docker socket access)
-#   vars.DEPLOY_HOST          192.168.0.69
+#   vars.DEPLOY_USER          ssh user
+#   vars.DEPLOY_HOST
 #   secrets.DEPLOY_SSH_KEY    private key, unencrypted
 #   secrets.DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan <host>`
 #
@@ -26,12 +19,6 @@
 
 name: Build and publish
 
-# Every branch builds and publishes. That is safe because publishing is not
-# deploying: a branch image just sits in the NAS daemon until someone pins it,
-# and having it there is what makes testing a branch on the real box a one-line
-# image.tag edit rather than a build. The branch name is in the tag so those
-# images are identifiable, and only master/tag builds get the `bN` alias.
-#
 # paths-ignore keeps this off the deploy commit. A promotion is one line in
 # deploy/nas/image.tag, so rebuilding there is worse than wasteful: it would
 # publish a sha- tag for a commit whose image.tag pins the *previous* commit's
