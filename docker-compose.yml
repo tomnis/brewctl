@@ -1,5 +1,5 @@
 # Local development only: all three services on one host, hardware in mock mode.
-# Production is split across two hosts -- see deploy/pi/ and deploy/nas/.
+# Production is split across two hosts -- see deploy/device/ and deploy/control/.
 services:
   hardware:
     build: ./backend

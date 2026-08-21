@@ -1,13 +1,13 @@
 # Test, build, smoke-test, and publish the api image.
 #
 # The image is streamed straight onto the deploy host with
-# `docker save | ssh docker load`, so the reference in deploy/nas/image.tag is a
+# `docker save | ssh docker load`, so the reference in deploy/control/image.tag is a
 #
 # Publishing is not deploying. This workflow only puts the image on the box;
 # promotion is a separate, deliberate commit that bumps the one line in
-# deploy/nas/image.tag (see deploy.yml). That keeps git the record of what is
+# deploy/control/image.tag (see deploy.yml). That keeps git the record of what is
 # running and makes rollback a `git revert` -- valid as long as the older image
-# is still loaded on the NAS (see the prune step below).
+# is still loaded on the control host (see the prune step below).
 #
 # Repo config required:
 #   vars.DEPLOY_USER          ssh user
@@ -20,7 +20,7 @@
 name: Build and publish
 
 # paths-ignore keeps this off the deploy commit. A promotion is one line in
-# deploy/nas/image.tag, so rebuilding there is worse than wasteful: it would
+# deploy/control/image.tag, so rebuilding there is worse than wasteful: it would
 # publish a sha- tag for a commit whose image.tag pins the *previous* commit's
 # image, and race deploy.yml for the single-capacity runner on every deploy.
 # Anything that can change the image (Dockerfile, backend/, frontend/) is outside
@@ -46,7 +46,7 @@ env:
   #
   # The full reference is assembled as <REGISTRY><owner>/<IMAGE>, so the owner
   # (the Forgejo org) is part of every tag: `catacombs/brewctl:sha-...` rather than a
-  # bare `brewctl`, which would collide with any other org's image on a NAS
+  # bare `brewctl`, which would collide with any other org's image on a shared
   # daemon that holds images from several repos. Adding a registry later is then
   # a one-line change here rather than an edit to every docker invocation.
   IMAGE: ""
@@ -55,7 +55,7 @@ env:
   REGISTRY: ""
   DEPLOY_USER: ${{ vars.DEPLOY_USER }}
   DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-  # How many brewctl images to keep on the NAS after a publish. Rollback by
+  # How many brewctl images to keep on the control host after a publish. Rollback by
   # `git revert` only works while the previous image is still there.
   KEEP_IMAGES: 10
 
@@ -99,13 +99,13 @@ jobs:
           npm run build
 
       # The Pi is deployed by hand and never self-updates, so a contract bump
-      # that ships to the NAS without a matching push to the Pi will block
+      # that ships to the control host without a matching push to the Pi will block
       # brewing. Say so loudly rather than letting it be discovered at brew time.
       - name: Warn on hardware contract change
         run: |
           if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null \
                | grep -q 'backend/src/brewctl/core/contract.py'; then
-            echo "::warning::hardware contract changed -- run 'make deploy-pi' or brews will be refused"
+            echo "::warning::hardware contract changed -- run 'make deploy-device' or brews will be refused"
           fi
 
   publish:
@@ -254,10 +254,10 @@ jobs:
       # here, so this is load-bearing rather than tidiness. Keep the newest
       # KEEP_IMAGES so a revert still has something to roll back to.
       #
-      # The image the NAS is actually running can fall out of that window if
+      # The image the control host is actually running can fall out of that window if
       # enough branches publish. `docker rmi` refuses to remove an in-use image, so
       # the running app is never broken by this -- the failure is swallowed.
-      #- name: Prune old images on the NAS
+      #- name: Prune old images on the control host
       #  run: |
       #    ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
       #        "${DEPLOY_USER}@${DEPLOY_HOST}" \
@@ -277,7 +277,7 @@ jobs:
             echo '```'
             for t in ${{ steps.tag.outputs.tags }}; do echo "${{ steps.tag.outputs.repo }}:$t"; done
             echo '```'
-            echo "To deploy: put this line in deploy/nas/image.tag and push:"
+            echo "To deploy: put this line in deploy/control/image.tag and push:"
             echo '```'
             echo "${{ steps.tag.outputs.repo }}:${{ steps.tag.outputs.primary }}"
             echo '```'

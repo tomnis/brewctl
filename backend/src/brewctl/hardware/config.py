@@ -7,7 +7,7 @@ from ..core.log import logger
 # These settings are only needed by hardware services running on Raspberry Pi
 
 # Scale configuration
-# The MAC shipped in deploy/pi/hardware.env.example. install.sh copies that file
+# The MAC shipped in deploy/device/hardware.env.example. install.sh copies that file
 # verbatim on a fresh install, so this exact value reaching a running service means
 # nobody edited it -- treat it as unset rather than dialling a nonexistent device.
 BREWCTL_SCALE_MAC_PLACEHOLDER = 'AA:BB:CC:DD:EE:FF'

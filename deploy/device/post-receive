@@ -10,7 +10,7 @@
 # reported success, the refs really did update, and the Pi checked out and
 # restarted on the OLD branch's code. Nothing surfaced it: the box stayed frozen
 # at whatever HEAD pointed at while every later deploy also reported success.
-# `make deploy-pi` pushes the current branch, so the pushed ref is the intent.
+# `make deploy-device` pushes the current branch, so the pushed ref is the intent.
 #
 # HEAD is moved to follow, which keeps the box self-describing: `symbolic-ref
 # HEAD` on the bare repo answers "what is deployed" without consulting this file.
@@ -73,5 +73,18 @@ git --work-tree="$TARGET" --git-dir="$GIT_DIR" checkout -f "${target_ref#refs/he
 log "Checked out $(git --git-dir="$GIT_DIR" rev-parse --short HEAD) (${target_ref#refs/heads/})"
 
 # --deps-only: refresh the venv and restart. Unit/env/sudoers changes still need
-# a manual `./deploy/pi/install.sh`, since those touch /etc and want eyes on them.
-exec "$TARGET/deploy/pi/install.sh" --deps-only
+# a manual `./deploy/device/install.sh`, since those touch /etc and want eyes on them.
+#
+# The directory name is resolved rather than hardcoded because this file lives in
+# ~/coldbrewer.git/hooks/ as a copy, so it can be older than the tree it just
+# checked out. It ran after `checkout -f`, so a hardcoded path that the pushed
+# tree has renamed away fails here: refs advanced, the new tree is on disk, and
+# the venv refresh and unit restart never happen -- the box keeps serving old
+# code with new source under it. The `pi` arm covers the deploy/pi ->
+# deploy/device rename and can go once a deploy has succeeded on the new name.
+for d in device pi; do
+    if [[ -x "$TARGET/deploy/$d/install.sh" ]]; then
+        exec "$TARGET/deploy/$d/install.sh" --deps-only
+    fi
+done
+die "no install.sh under $TARGET/deploy/{device,pi} -- checked out $(git --git-dir="$GIT_DIR" rev-parse --short HEAD) but could not refresh deps or restart the service"

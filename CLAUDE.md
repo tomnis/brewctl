@@ -12,8 +12,8 @@ make testBackend      # cd backend && pytest tests
 make testFrontend     # cd frontend && npm run test:run
 make lint             # cd frontend && npm run lint (no backend linter is wired up)
 make build-prod-image # docker build -t brewctl-api:local .
-make deploy-pi        # git push coldbrewer <branch> — the ONLY way the Pi updates
-make deploy-nas       # deploy/nas/apply.sh applies deploy/nas/app.yaml to TrueNAS
+make deploy-device    # git push coldbrewer <branch> — the ONLY way the Pi updates
+make deploy-control   # deploy/control/apply.sh applies deploy/control/app.yaml to TrueNAS
 ```
 
 Single test / focused runs:
@@ -37,11 +37,14 @@ BREWCTL_MODE=hardware fastapi dev src/brewctl/main.py --port 8001
 Two FastAPI apps from one Python package plus a React/Vite frontend. `brewctl/main.py` is the single
 entrypoint: it reads `BREWCTL_MODE` (`api` | `hardware`) and imports the corresponding `app`.
 
-**Production is split across two hosts.** The hardware service runs *bare metal* on
-`coldbrewer.local` (Pi Zero 2 W, arm64, 416 MB RAM, **no Docker**) under systemd — see `deploy/pi/`.
-The api runs in Docker on the TrueNAS box and serves the built frontend at `/app`, so the UI is
-same-origin with the API — see `deploy/nas/`. Locally, `docker-compose.yml` still runs all three from
-`backend/Dockerfile` with the hardware service in mock mode.
+**Production is split across two hosts.** Deploy manifests are named for the *role* each host
+plays, not the box it currently is: `deploy/device/` and `deploy/control/`. That is a separate
+vocabulary from `BREWCTL_MODE` — **device** runs mode `hardware`, **control** runs mode `api`
+plus the bundled frontend. The device service runs *bare metal* on `coldbrewer.local` (Pi Zero
+2 W, arm64, 416 MB RAM, **no Docker**) under systemd. Control runs in Docker as a TrueNAS custom
+app on `catacombs` and serves the built frontend at `/app`, so the UI is same-origin with the
+API. Locally, `docker-compose.yml` still runs all three from `backend/Dockerfile` with the
+hardware service in mock mode.
 
 Requirements are split per deployment target: `base.txt` (shared) → `hardware.txt` (Pi devices:
 pyacaia/bluepy, Adafruit MotorKit) and `api.txt` (influxdb-client, httpx); `dev.txt` is api + pytest
@@ -125,17 +128,17 @@ SSE/WS URLs too.
 ### CI/CD (Forgejo, `.forgejo/workflows/`)
 
 **Building is not deploying.** `build.yml` runs tests, builds the root `Dockerfile`, smoke-tests the
-image (`/api/health` and `/app/`), and streams it onto the NAS with `docker save | ssh docker load`
+image (`/api/health` and `/app/`), and streams it onto the control host with `docker save | ssh docker load`
 — there is no registry, so the deployed reference is a registry-less local tag
 (`catacombs/brewctl:sha-<short12>`). Every branch publishes an image; it just sits on the daemon.
 
-The manifest is split in two: `deploy/nas/app.yaml` is the *shape* of the deployment and carries an
-`@IMAGE@` placeholder, while `deploy/nas/image.tag` holds the one pinned reference and is the whole
+The manifest is split in two: `deploy/control/app.yaml` is the *shape* of the deployment and carries an
+`@IMAGE@` placeholder, while `deploy/control/image.tag` holds the one pinned reference and is the whole
 promotion. `apply.sh` substitutes one into the other before the PUT and refuses to apply if `@IMAGE@`
 survives or the tag is still `REPLACE_ME`; `--render` prints the result without touching the network,
 and `--image REF` overrides the file for an emergency rollback (leaving the box diverged from git).
 
-`deploy.yml` runs only on master pushes touching `deploy/nas/{image.tag,app.yaml,apply.sh}`;
+`deploy.yml` runs only on master pushes touching `deploy/control/{image.tag,app.yaml,apply.sh}`;
 `build.yml` has a matching `paths-ignore: deploy/**`, so a promotion does not also rebuild. So
 **deploying is a one-line commit to `image.tag`**, and rollback is `git revert` (valid while the old
 image is still loaded). `apply.sh` refuses to redeploy while a brew is active, and fails open if the
@@ -150,9 +153,9 @@ not trigger runs.
   the exact string `true` makes the hardware service run `MockScale`/`MockValve`: it starts cleanly,
   `/health` reports healthy, and no physical device moves. After any config change on the Pi, check
   `journalctl -u brewctl-hardware | grep -iE 'production|mock'`.
-- **The Pi never self-updates.** It changes only when someone runs `make deploy-pi` (a push to the
-  `coldbrewer` remote, whose `post-receive` hook runs `deploy/pi/install.sh --deps-only` and restarts
-  the unit; unit/env/sudoers changes need a full `install.sh` run on the Pi). The NAS deploys
+- **The Pi never self-updates.** It changes only when someone runs `make deploy-device` (a push to the
+  `coldbrewer` remote, whose `post-receive` hook runs `deploy/device/install.sh --deps-only` and restarts
+  the unit; unit/env/sudoers changes need a full `install.sh` run on the Pi). The control host deploys
   automatically, so the Pi can lag indefinitely. `core/contract.py`'s `HARDWARE_API_VERSION` is what
   catches it: the api refuses to *start a brew* against an older Pi (409 with
   `detail.code == "hardware_version_mismatch"`) while still serving the UI. Bump that version for any

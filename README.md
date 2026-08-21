@@ -176,7 +176,7 @@ graph TD
 
 ### Prerequisites
 
-- Docker and Docker Compose (development, and the NAS in production)
+- Docker and Docker Compose (development, and the control host in production)
 - For production, a Raspberry Pi with:
   - Bluetooth adapter
   - Acaia Lunar scale
@@ -203,13 +203,18 @@ existing instance in `.env`, or leave it unset to run without time series.
 
 Production is split across two machines. See [Deployment](#deployment).
 
-| | Runs | Where | How |
-|---|---|---|---|
-| **Hardware service** | `BREWCTL_MODE=hardware` | Raspberry Pi | Bare metal, systemd |
-| **API + frontend** | `BREWCTL_MODE=api` | TrueNAS | Docker Compose |
+| | Runs | Manifests | Where today | How |
+|---|---|---|---|---|
+| **Device** | `BREWCTL_MODE=hardware` | `deploy/device/` | Raspberry Pi, `coldbrewer.local` | Bare metal, systemd |
+| **Control** | `BREWCTL_MODE=api` + bundled frontend | `deploy/control/` | TrueNAS, `catacombs` | Docker, custom app |
 
-The Pi owns the physical devices; the api holds the brewing logic and serves the
-built frontend at `/app`, so the UI and the API are same-origin.
+The device owns the physical hardware; control holds the brewing logic and serves
+the built frontend at `/app`, so the UI and the API are same-origin.
+
+The deploy directories are named for those roles, not for the boxes: the control
+service is not tied to a NAS, and only the device deploy depends on its host being
+a Pi. The `BREWCTL_MODE` values are a separate, unchanged vocabulary — `control`
+runs mode `api`, `device` runs mode `hardware`.
 
 ---
 
@@ -228,7 +233,7 @@ I²C enabled through `raspi-config`, and the service user in the `i2c`,
 `adafruit_motorkit`, and `adafruit_motor` all import, so a missing one surfaces
 at install time rather than as silent mock mode later.
 
-Check them all at once first — `deploy/pi/preflight.sh` surveys the box read-only
+Check them all at once first — `deploy/device/preflight.sh` surveys the box read-only
 (installs nothing, restarts nothing, safe to run mid-brew) and prints the `apt`
 line for whatever is missing. It exits non-zero if anything would actually block
 the install, so it works as a gate.
@@ -236,20 +241,20 @@ the install, so it works as a gate.
 Before the Pi has the code, pipe it over stdin rather than copying it there:
 
 ```bash
-ssh tomas@coldbrewer.local 'bash -s' < deploy/pi/preflight.sh   # from a checkout
-~/coldbrewer/deploy/pi/preflight.sh                             # on the Pi, once it has the tree
+ssh tomas@coldbrewer.local 'bash -s' < deploy/device/preflight.sh   # from a checkout
+~/coldbrewer/deploy/device/preflight.sh                             # on the Pi, once it has the tree
 ```
 
 First-time setup, on the Pi, **in this order**:
 
 ```bash
-git clone <this repo> ~/coldbrewer           # seeds the work tree for the first install
-~/coldbrewer/deploy/pi/install.sh            # unit + /etc/brewctl/hardware.env + sudoers
+git clone <this repo> ~/coldbrewer      # seeds the work tree for the first install
+~/coldbrewer/deploy/device/install.sh   # unit + /etc/brewctl/hardware.env + sudoers
 
 git init --bare ~/coldbrewer.git
 git -C ~/coldbrewer.git symbolic-ref HEAD refs/heads/master
-cp ~/coldbrewer/deploy/pi/post-receive ~/coldbrewer.git/hooks/
-cp ~/coldbrewer/deploy/pi/pre-receive ~/coldbrewer.git/hooks/
+cp ~/coldbrewer/deploy/device/post-receive ~/coldbrewer.git/hooks/
+cp ~/coldbrewer/deploy/device/pre-receive ~/coldbrewer.git/hooks/
 chmod +x ~/coldbrewer.git/hooks/post-receive ~/coldbrewer.git/hooks/pre-receive
 git -C ~/coldbrewer.git config receive.advertisePushOptions true
 
@@ -259,11 +264,11 @@ sudo systemctl restart brewctl-hardware
 
 The order is load-bearing. The hook ends in `install.sh --deps-only`, which
 restarts the unit with `sudo -n` — that needs the sudoers rule only a *full*
-`install.sh` writes. Install the hook first and the very first `make deploy-pi`
+`install.sh` writes. Install the hook first and the very first `make deploy-device`
 fails.
 
 `post-receive` checks out **the ref you pushed** and moves the bare repo's `HEAD`
-to follow, so `make deploy-pi` from a new branch deploys that branch and says so.
+to follow, so `make deploy-device` from a new branch deploys that branch and says so.
 `git -C ~/coldbrewer.git symbolic-ref HEAD` is therefore a record of what is
 deployed, not a setting you have to keep in sync. Push exactly one branch: a push
 carrying several is refused unless one of them is the branch already deployed,
@@ -280,7 +285,7 @@ device libraries import, installs `brewctl-hardware.service`, and disables the
 old `coldbrew-backend`/`coldbrew-frontend` units. It never overwrites an existing
 `/etc/brewctl/hardware.env`.
 
-Thereafter, `make deploy-pi` (a `git push`) is the whole deploy. Changes to the
+Thereafter, `make deploy-device` (a `git push`) is the whole deploy. Changes to the
 unit, the env file, or sudoers still need a full `install.sh` run on the Pi —
 `--deps-only` deliberately does not touch `/etc`.
 
@@ -293,7 +298,7 @@ old code. It fails *open* when the api is genuinely absent (connection refused,
 unresolvable host) so a crashlooping api cannot block the deploy that fixes it,
 and *closed* on a timeout — a slow api is a running api and may be mid-brew.
 
-The override is `make deploy-pi FORCE=1`, which pushes `-o brewctl-force`.
+The override is `make deploy-device FORCE=1`, which pushes `-o brewctl-force`.
 Reach for it knowing what it costs: valve position lives only in the hardware
 process (`MotorKitValve.breadcrumbs`), so the restart wipes it,
 `return_to_start()` becomes a no-op, and a valve left open stays open while
@@ -302,7 +307,7 @@ first is almost always the right move.
 
 Both hooks are installed by hand; `install.sh` does not manage them. An existing
 Pi needs the three `pre-receive` lines from the setup block above run once, or
-its deploys stay ungated — `deploy/pi/preflight.sh` reports whether they are.
+its deploys stay ungated — `deploy/device/preflight.sh` reports whether they are.
 
 **Always confirm it is driving real hardware.** `BREWCTL_IS_PROD` defaults to
 false, and when it is not exactly `true` the service starts happily on
@@ -313,30 +318,30 @@ journalctl -u brewctl-hardware | grep -iE 'production|mock'
 # want: "Initializing production [ac lunar] scale" / "Initializing production valve"
 ```
 
-### API + frontend (TrueNAS custom app)
+### Control service (TrueNAS custom app)
 
 `PUT /api/v2.0/app/id/{name}` takes a custom app's whole compose config as
-`custom_compose_config_string`, so `deploy/nas/apply.sh` posts one file with one
+`custom_compose_config_string`, so `deploy/control/apply.sh` posts one file with one
 substitution made and nothing else:
 
-- `deploy/nas/app.yaml` — the *shape* of the deployment (ports, env, secrets,
+- `deploy/control/app.yaml` — the *shape* of the deployment (ports, env, secrets,
   healthcheck), with an `@IMAGE@` placeholder. Changes rarely.
-- `deploy/nas/image.tag` — the one pinned image reference. **This file is the deploy.**
+- `deploy/control/image.tag` — the one pinned image reference. **This file is the deploy.**
 
 Publishing and promoting are separate:
 
 ```bash
 git tag v1.2.3 && git push forgejo v1.2.3    # CI tests, builds, publishes. Deploys nothing.
-# then put the published reference in deploy/nas/image.tag and push -- that is the deploy
+# then put the published reference in deploy/control/image.tag and push -- that is the deploy
 ```
 
 Git therefore records what is running, and rollback is `git revert` of the bump —
-which works only while that image is still loaded on the NAS, since there is no
+which works only while that image is still loaded on the control host, since there is no
 registry to re-pull from. Apply by hand with:
 
 ```bash
-./deploy/nas/apply.sh deploy/nas/app.yaml --render          # preview, no network
-TRUENAS_URL=https://<nas> TRUENAS_API_KEY=... make deploy-nas
+./deploy/control/apply.sh deploy/control/app.yaml --render   # preview, no network
+TRUENAS_URL=https://<truenas-host> TRUENAS_API_KEY=... make deploy-control
 ```
 
 `apply.sh` refuses to apply an unrendered manifest or a placeholder tag. For an
@@ -344,14 +349,14 @@ emergency rollback to an image already on the box, `--image REF` bypasses
 `image.tag` — the box is then running something git does not record, so follow it
 with a real commit.
 
-UI at `http://<nas>:8000/app`, API at `http://<nas>:8000/api`.
+UI at `http://<control-host>:8000/app`, API at `http://<control-host>:8000/api`.
 
 One-time bootstrap, in order:
 
 1. Set the repo config in Forgejo — `vars.DEPLOY_USER`, `vars.DEPLOY_HOST`,
    `vars.TRUENAS_URL`, `vars.BREWCTL_API_URL`, `secrets.DEPLOY_SSH_KEY`,
    `secrets.DEPLOY_KNOWN_HOSTS`, `secrets.TRUENAS_API_KEY` (APPS_WRITE). The
-   deploy user must be in the `docker` group on the NAS; check with
+   deploy user must be in the `docker` group on the control host; check with
    `ssh -o BatchMode=yes $DEPLOY_USER@$DEPLOY_HOST 'docker images && command -v gunzip'`.
 2. Put the InfluxDB token at the `secrets:` path in `app.yaml`, non-empty and
    `root:root 0400`. The api reads it via `BREWCTL_INFLUXDB_TOKEN_FILE` and
@@ -371,7 +376,7 @@ One-time bootstrap, in order:
 Address the Pi by **IP**, not `coldbrewer.local` — mDNS does not resolve inside a
 container. Give the Pi a DHCP reservation. The same caveat applies to
 `BREWCTL_INFLUXDB_URL`: a `.local` name only works there if it is real DNS, so
-check it resolves from *inside* a container on the NAS.
+check it resolves from *inside* a container on the control host.
 
 `apply.sh` refuses to deploy while a brew is `brewing`, `paused`, or `error` (all
 three still drive the valve), since a redeploy restarts the api and destroys the
@@ -452,7 +457,7 @@ apart — so holding it to the 10s timer would close the valve ~10s into every b
 The timeout is derived rather than stored as an armed flag, so the valve is never
 unguarded and a rollback decays back to the slow tier on its own.
 
-**API service only** (the NAS — `deploy/nas/app.yaml`)
+**Control service only** (`deploy/control/app.yaml`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -666,7 +671,7 @@ brewctl/
 │   │   │   ├── server.py      # Device endpoints, SSE, valve watchdog
 │   │   │   ├── LunarScale.py  # Acaia Lunar over BLE
 │   │   │   └── MotorKitValve.py  # Stepper over I2C
-│   │   └── api/               # Runs on the NAS; no direct hardware access
+│   │   └── api/               # Runs on the control host; no direct hardware access
 │   │       ├── server.py      # Brew endpoints, SSE/WS, serves the UI at /app
 │   │       ├── http_scale.py  # AbstractScale over the hardware service's SSE
 │   │       ├── http_valve.py  # AbstractValve over HTTP + SSE
@@ -680,8 +685,8 @@ brewctl/
 │   └── package.json
 │
 ├── deploy/
-│   ├── pi/                    # systemd unit, env file, install.sh, git hook
-│   └── nas/                   # docker compose for api + frontend
+│   ├── device/                # systemd unit, env file, install.sh, git hooks
+│   └── control/               # app manifest, apply.sh, pinned image tag
 │
 ├── Dockerfile                 # Production api image (bundles the frontend)
 ├── docker-compose.yml         # Local dev, all three services

@@ -576,7 +576,7 @@ async def start_brew(req: StartBrewRequest | None = None):
                 "message": (
                     f"Hardware service speaks contract v{compat['hardware_api_version']}, "
                     f"this api requires v{MIN_HARDWARE_API_VERSION}. "
-                    "Push the latest code to the Pi (make deploy-pi)."
+                    "Push the latest code to the Pi (make deploy-device)."
                 ),
                 **compat,
             },

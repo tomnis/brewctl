@@ -2,9 +2,9 @@
 #
 # Read-only prerequisite survey for the BrewCTL hardware service.
 #
-#   ./deploy/pi/preflight.sh                             # on the Pi
-#   ssh tomas@coldbrewer.local 'bash -s' < $0            # from a checkout, before
-#                                                        # the Pi has the code
+#   ./deploy/device/preflight.sh                  # on the Pi
+#   ssh tomas@coldbrewer.local 'bash -s' < $0     # from a checkout, before
+#                                                 # the Pi has the code
 #
 # Installs nothing, writes nothing, restarts nothing. Safe to run on a Pi that is
 # mid-brew -- which is the point: the answer to "can this box run the service"
@@ -129,7 +129,7 @@ if command -v bluetoothctl >/dev/null; then
     mac=""
     mac_source_error=""
     if [[ ! -e "$ENV_FILE" ]]; then
-        mac_source_error="$ENV_FILE does not exist yet -- install.sh creates it from deploy/pi/hardware.env.example"
+        mac_source_error="$ENV_FILE does not exist yet -- install.sh creates it from deploy/device/hardware.env.example"
     elif ! env_line=$(sudo -n grep -m1 '^BREWCTL_SCALE_MAC_ADDRESS=' "$ENV_FILE" 2>/dev/null); then
         # Either sudo -n was refused or the key is absent; they are worth telling
         # apart, because only one of them is the operator's to fix here.
@@ -202,7 +202,7 @@ if [[ -d "$HOME/coldbrewer.git" ]]; then
         ok "pre-receive hook installed and executable (deploys are brew-gated)"
     else
         soft "pre-receive hook not installed -- a deploy mid-brew will NOT be refused"
-        info "cp $REPO_DIR/deploy/pi/pre-receive $HOME/coldbrewer.git/hooks/ && chmod +x $HOME/coldbrewer.git/hooks/pre-receive"
+        info "cp $REPO_DIR/deploy/device/pre-receive $HOME/coldbrewer.git/hooks/ && chmod +x $HOME/coldbrewer.git/hooks/pre-receive"
     fi
 
     # Without this, `git push -o` is rejected client-side with "the receiving end
@@ -211,9 +211,9 @@ if [[ -d "$HOME/coldbrewer.git" ]]; then
     # hook on the Pi.
     push_opts=$(git -C "$HOME/coldbrewer.git" config --get receive.advertisePushOptions 2>/dev/null)
     if [[ "$push_opts" == "true" ]]; then
-        ok "receive.advertisePushOptions=true (make deploy-pi FORCE=1 will work)"
+        ok "receive.advertisePushOptions=true (make deploy-device FORCE=1 will work)"
     else
-        soft "receive.advertisePushOptions is ${push_opts:-unset} -- 'make deploy-pi FORCE=1' will be rejected client-side"
+        soft "receive.advertisePushOptions is ${push_opts:-unset} -- 'make deploy-device FORCE=1' will be rejected client-side"
         info "git -C $HOME/coldbrewer.git config receive.advertisePushOptions true"
     fi
 fi
@@ -255,4 +255,4 @@ if (( HARD_FAILED )); then
     printf '   \033[1;31m%d hard check(s) failed\033[0m -- fix these before running install.sh\n' "$HARD_FAILED"
     exit 1
 fi
-printf '   \033[1;32mready\033[0m -- run ./deploy/pi/install.sh\n'
+printf '   \033[1;32mready\033[0m -- run ./deploy/device/install.sh\n'

@@ -20,11 +20,11 @@
 # rewritten while the service still ran the old code -- a box diverged from git
 # with nothing pointing at the cause.
 #
-# Override: `git push -o brewctl-force` (or `make deploy-pi FORCE=1`). That needs
+# Override: `git push -o brewctl-force` (or `make deploy-device FORCE=1`). That needs
 # `git config receive.advertisePushOptions true` on the bare repo, otherwise the
 # push is rejected client-side and the override silently does not exist.
 #
-# deploy/nas/apply.sh gates the api deploy on the same endpoint with the same
+# deploy/control/apply.sh gates the api deploy on the same endpoint with the same
 # fail-open reasoning. Kept as a separate copy on purpose: this file lives in
 # ~/coldbrewer.git/hooks/, not in the work tree, so sourcing a shared library
 # would buy a path and chicken-and-egg problem for ~25 lines.
@@ -63,7 +63,7 @@ done
 # ------------------------------------------------------------ brew state ---
 # python3 rather than curl+jq: preflight.sh verifies neither of those on the Pi,
 # but python3 is already mandatory (install.sh builds a venv with it). Same
-# reason the container healthcheck in deploy/nas/app.yaml probes with urllib.
+# reason the container healthcheck in deploy/control/app.yaml probes with urllib.
 log "Checking for an active brew at $BREWCTL_API_URL"
 state=$(BREWCTL_API_URL="$BREWCTL_API_URL" python3 - <<'PY'
 import json
@@ -112,7 +112,7 @@ case "$state" in
             die "a brew is $state and the hardware service is holding the valve." \
                 "Restarting it loses the valve's position: return_to_start() becomes a no-op," \
                 "so a valve left open stays open while the UI reports it closed." \
-                "Stop the brew first, or push with: make deploy-pi FORCE=1"
+                "Stop the brew first, or push with: make deploy-device FORCE=1"
         fi
         ;;
     unreachable)
@@ -127,7 +127,7 @@ case "$state" in
             die "could not determine brew state -- the api answered slowly, or with an error." \
                 "That is not the same as 'no brew': a slow api is a running api and may be" \
                 "mid-brew, so this fails closed on purpose." \
-                "Retry, or push with: make deploy-pi FORCE=1"
+                "Retry, or push with: make deploy-device FORCE=1"
         fi
         ;;
     *)

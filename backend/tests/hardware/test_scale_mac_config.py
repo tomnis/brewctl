@@ -1,7 +1,7 @@
 """
 Tests for scale-MAC validation in `hardware/config.py`.
 
-install.sh copies deploy/pi/hardware.env.example verbatim to
+install.sh copies deploy/device/hardware.env.example verbatim to
 /etc/brewctl/hardware.env on a fresh install, so the placeholder MAC in that file
 can reach a running service unedited. create_scale() gates on BREWCTL_IS_PROD
 alone, so an unedited MAC would build a LunarScale that can never connect: the

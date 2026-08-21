@@ -10,7 +10,7 @@ Type=exec
 User=__USER__
 WorkingDirectory=__SRC__
 
-# All configuration lives here, installed by deploy/pi/install.sh
+# All configuration lives here, installed by deploy/device/install.sh
 EnvironmentFile=/etc/brewctl/hardware.env
 Environment=PYTHONPATH=__SRC__
 
