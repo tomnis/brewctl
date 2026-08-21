@@ -1,4 +1,4 @@
-# brewctl on TrueNAS -- the deployment manifest.
+# the deployment manifest.
 #
 # This file plus deploy/nas/image.tag IS the desired state. `PUT
 # /api/v2.0/app/id/brewctl` takes a custom app's entire compose config as
@@ -10,9 +10,6 @@
 # bumped image.tag.
 #
 #   ./deploy/nas/apply.sh deploy/nas/app.yaml
-#
-# The app must be created once through the TrueNAS Custom App UI before apply.sh
-# can update it -- PUT is update, not create.
 #
 # Only the api runs here. The hardware service runs bare metal on the Pi and is
 # deployed by hand with `make deploy-pi`; it is never containerised.
@@ -51,47 +48,20 @@ services:
     # what apply.sh's health gate and the container healthcheck both probe, so
     # losing it would make a deploy unverifiable.
     #
-    # Traefik's defaultRule on this host is
-    #   HostRegexp(`^{{ index .Labels "com.docker.compose.service" }}.catacombs.(lan|local)$`)
     # so the route is derived from the *compose service name* above -- which is
-    # why that key is `brewctl` and not `api`. Naming it `api` produced a router
-    # for api.catacombs.local and a Traefik 404 on brewctl.catacombs.local, which
-    # is indistinguishable from an application 404.
+    # why that key is `brewctl` and not `api`.
     labels:
       - traefik.enable=true
 
-    # Traefik has to share a network with this container to reach it -- the
-    # label alone only opts in to discovery, and a router pointing at an
-    # unreachable backend is a 502, not a startup error.
     networks:
       - catacombs
 
-    # Pi-hole, by its address ON THIS NETWORK -- not 192.168.0.69.
-    #
-    # Pointing at the host IP cannot work here, and the reason is worth recording.
-    # Pi-hole publishes :53, so a query from a container is relayed by docker-proxy,
-    # which answers with a *fresh* datagram whose source address is chosen by route
-    # lookup back toward the container: the bridge gateway 172.16.8.1, not the
-    # 192.168.0.69 that was queried. Docker's embedded resolver forwards on a
-    # connected UDP socket, so the kernel discards the mismatched reply and the
-    # resolver returns SERVFAIL. Querying Pi-hole's own address on catacombs skips
-    # docker-proxy entirely, so the reply comes from where it was sent.
-    #
-    # Invisible to casual testing: an unconnected socket accepts the mismatched
-    # reply and looks fine, and `dig @192.168.0.69` from the host works because that
-    # path never crosses the bridge. Test with a *connected* socket.
-    #
-    # 172.16.8.53 is set statically in the Pi-hole app's network config. If that
-    # ever reverts to a dynamic address, this silently breaks -- resolution failures
-    # at brew time, not at deploy time.
     dns:
       - 172.16.8.53
 
     # Belt and braces for the one name a brew actually depends on. /etc/hosts is
-    # consulted before any resolver, so InfluxDB stays reachable even while Pi-hole
+    # consulted before any resolver, so InfluxDB stays reachable even if dns
     # is restarting -- a Pi-hole update mid-brew would otherwise stop weight writes
-    # for the duration. 192.168.0.69 is the NAS's own LAN address (Traefik), stable,
-    # and Traefik still discovers InfluxDB's container and port dynamically.
     extra_hosts:
       - "influxdb.catacombs.local:192.168.0.69"
 
@@ -147,10 +117,6 @@ services:
 
 networks:
   catacombs:
-    # Created outside this file and shared with Traefik. external: true means
-    # compose attaches to it rather than creating its own -- and fails loudly if
-    # it is absent, rather than silently making a second, isolated network of
-    # the same name.
     external: true
 
 secrets:

@@ -22,7 +22,10 @@ set -uo pipefail   # deliberately no -e; a failed check must not abort the surve
 REPO_DIR="${BREWCTL_REPO_DIR:-$HOME/coldbrewer}"
 SERVICE_USER="${BREWCTL_USER:-$(id -un)}"
 ENV_FILE=/etc/brewctl/hardware.env
-SCALE_MAC_DEFAULT=60:8a:10:4d:5f:ac
+# The MAC shipped in hardware.env.example. install.sh copies that file verbatim on
+# a fresh install, so seeing it here means nobody edited it. Kept in sync with
+# BREWCTL_SCALE_MAC_PLACEHOLDER in backend/src/brewctl/hardware/config.py.
+SCALE_MAC_PLACEHOLDER=AA:BB:CC:DD:EE:FF
 
 HARD_FAILED=0
 MISSING_PKGS=()
@@ -117,14 +120,37 @@ else
 fi
 
 if command -v bluetoothctl >/dev/null; then
-    # Whatever MAC the env file (or the shipped example) points at is what
-    # create_scale() will try to connect to.
-    mac="$SCALE_MAC_DEFAULT"
-    if [[ -r "$ENV_FILE" ]]; then
-        from_env=$(sudo -n grep -m1 '^BREWCTL_SCALE_MAC_ADDRESS=' "$ENV_FILE" 2>/dev/null | cut -d= -f2)
-        [[ -n "$from_env" ]] && mac="$from_env"
+    # Whatever MAC the env file names is what create_scale() will try to connect
+    # to, so that file is the only source worth checking. There is deliberately no
+    # fallback MAC: this used to default to a baked-in address and silently use it
+    # whenever the env file could not be read, so on a Pi without passwordless
+    # sudo the check reported "ok" for a device the service would never touch --
+    # the same species of green-check-that-means-nothing as BREWCTL_IS_PROD.
+    mac=""
+    mac_source_error=""
+    if [[ ! -e "$ENV_FILE" ]]; then
+        mac_source_error="$ENV_FILE does not exist yet -- install.sh creates it from deploy/pi/hardware.env.example"
+    elif ! env_line=$(sudo -n grep -m1 '^BREWCTL_SCALE_MAC_ADDRESS=' "$ENV_FILE" 2>/dev/null); then
+        # Either sudo -n was refused or the key is absent; they are worth telling
+        # apart, because only one of them is the operator's to fix here.
+        if sudo -n true 2>/dev/null; then
+            mac_source_error="BREWCTL_SCALE_MAC_ADDRESS is not set in $ENV_FILE -- the service will run MockScale"
+        else
+            mac_source_error="cannot read $ENV_FILE (sudo -n refused) -- re-run with sudo to check the scale MAC"
+        fi
+    else
+        mac=$(printf '%s' "$env_line" | cut -d= -f2)
+        if [[ -z "$mac" ]]; then
+            mac_source_error="BREWCTL_SCALE_MAC_ADDRESS is empty in $ENV_FILE -- the service will run MockScale"
+        elif [[ "${mac^^}" == "$SCALE_MAC_PLACEHOLDER" ]]; then
+            mac=""
+            mac_source_error="BREWCTL_SCALE_MAC_ADDRESS is still the $SCALE_MAC_PLACEHOLDER placeholder in $ENV_FILE -- set the real MAC (bluetoothctl scan on). With BREWCTL_IS_PROD=true the service refuses to start."
+        fi
     fi
-    if bluetoothctl devices 2>/dev/null | grep -qi "$mac"; then
+
+    if [[ -z "$mac" ]]; then
+        soft "$mac_source_error"
+    elif bluetoothctl devices 2>/dev/null | grep -qi "$mac"; then
         ok "scale $mac is known to bluetoothctl"
     else
         soft "scale $mac not in 'bluetoothctl devices' -- power the scale on and run: bluetoothctl scan on"
@@ -166,6 +192,28 @@ if [[ -d "$HOME/coldbrewer.git" ]]; then
     [[ -x "$HOME/coldbrewer.git/hooks/post-receive" ]] \
         && ok "post-receive hook installed and executable" \
         || info "post-receive hook not installed yet"
+
+    # The brew gate. Its absence is the pre-existing state, not a blocker, so it
+    # is soft -- but an ungated Pi will happily restart the hardware service
+    # mid-brew and lose the valve's position.
+    if [[ -x "$HOME/coldbrewer.git/hooks/pre-receive" ]]; then
+        ok "pre-receive hook installed and executable (deploys are brew-gated)"
+    else
+        soft "pre-receive hook not installed -- a deploy mid-brew will NOT be refused"
+        info "cp $REPO_DIR/deploy/pi/pre-receive $HOME/coldbrewer.git/hooks/ && chmod +x $HOME/coldbrewer.git/hooks/pre-receive"
+    fi
+
+    # Without this, `git push -o` is rejected client-side with "the receiving end
+    # does not support push options" -- so the force override silently does not
+    # exist until it is set, and the only way out of a bad gate is editing the
+    # hook on the Pi.
+    push_opts=$(git -C "$HOME/coldbrewer.git" config --get receive.advertisePushOptions 2>/dev/null)
+    if [[ "$push_opts" == "true" ]]; then
+        ok "receive.advertisePushOptions=true (make deploy-pi FORCE=1 will work)"
+    else
+        soft "receive.advertisePushOptions is ${push_opts:-unset} -- 'make deploy-pi FORCE=1' will be rejected client-side"
+        info "git -C $HOME/coldbrewer.git config receive.advertisePushOptions true"
+    fi
 fi
 
 # A surviving env file is how mock mode outlives a "clean" reinstall: install.sh

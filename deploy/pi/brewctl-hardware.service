@@ -10,10 +10,7 @@ Type=exec
 User=__USER__
 WorkingDirectory=__SRC__
 
-# All configuration lives here, installed by deploy/pi/install.sh. Notably this
-# replaces the old `bash -lc` + ~/.profile arrangement, which sourced COLDBREW_*
-# names that no current code reads -- BREWCTL_IS_PROD would have defaulted to
-# false and the service would have silently driven MockScale/MockValve.
+# All configuration lives here, installed by deploy/pi/install.sh
 EnvironmentFile=/etc/brewctl/hardware.env
 Environment=PYTHONPATH=__SRC__
 

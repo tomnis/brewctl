@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Apply deploy/nas/app.yaml to the TrueNAS custom app.
+# Apply deploy/nas/app.yaml to the custom app.
 #
 #   ./deploy/nas/apply.sh deploy/nas/app.yaml [--force] [--render] [--image REF]
 #
@@ -16,7 +16,7 @@
 # the deploy workflow trigger on exactly that file.
 #
 # env:
-#   TRUENAS_URL       https://192.168.0.69
+#   TRUENAS_URL
 #   TRUENAS_API_KEY   API key with APPS_WRITE
 #   TRUENAS_APP       app name (default brewctl). This is the app's id in the
 #                     TrueNAS API -- whatever it was named in the Custom App UI.

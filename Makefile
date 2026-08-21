@@ -24,8 +24,12 @@ deploy-nas:
 # Deploy the hardware service to the Pi. Bare metal -- no Docker on that box.
 # The post-receive hook refreshes deps and restarts the unit; run
 # deploy/pi/install.sh on the Pi itself for the first install or unit changes.
+#
+# The pre-receive hook refuses the push outright while a brew is running, because
+# the restart wipes the valve's in-memory position. FORCE=1 overrides it -- read
+# deploy/pi/pre-receive before you reach for that.
 deploy-pi:
-	git push coldbrewer $$(git rev-parse --abbrev-ref HEAD)
+	git push $(if $(FORCE),-o brewctl-force,) coldbrewer $$(git rev-parse --abbrev-ref HEAD)
 
 testBackend:
 	cd backend && pytest tests

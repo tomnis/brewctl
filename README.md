@@ -249,7 +249,9 @@ git clone <this repo> ~/coldbrewer           # seeds the work tree for the first
 git init --bare ~/coldbrewer.git
 git -C ~/coldbrewer.git symbolic-ref HEAD refs/heads/master
 cp ~/coldbrewer/deploy/pi/post-receive ~/coldbrewer.git/hooks/
-chmod +x ~/coldbrewer.git/hooks/post-receive
+cp ~/coldbrewer/deploy/pi/pre-receive ~/coldbrewer.git/hooks/
+chmod +x ~/coldbrewer.git/hooks/post-receive ~/coldbrewer.git/hooks/pre-receive
+git -C ~/coldbrewer.git config receive.advertisePushOptions true
 
 sudoedit /etc/brewctl/hardware.env           # confirm BREWCTL_SCALE_MAC_ADDRESS
 sudo systemctl restart brewctl-hardware
@@ -271,6 +273,26 @@ old `coldbrew-backend`/`coldbrew-frontend` units. It never overwrites an existin
 Thereafter, `make deploy-pi` (a `git push`) is the whole deploy. Changes to the
 unit, the env file, or sudoers still need a full `install.sh` run on the Pi —
 `--deps-only` deliberately does not touch `/etc`.
+
+**A deploy is refused while a brew is running.** `pre-receive` asks the api for
+`brew_state` and rejects the push on `brewing`, `paused`, or `error`. It is
+`pre-receive` rather than `post-receive` so that nothing moves on a refusal:
+`post-receive` runs after the refs are updated and after its own `checkout -f`,
+so failing there would leave the tree deployed and the service still running the
+old code. It fails *open* when the api is genuinely absent (connection refused,
+unresolvable host) so a crashlooping api cannot block the deploy that fixes it,
+and *closed* on a timeout — a slow api is a running api and may be mid-brew.
+
+The override is `make deploy-pi FORCE=1`, which pushes `-o brewctl-force`.
+Reach for it knowing what it costs: valve position lives only in the hardware
+process (`MotorKitValve.breadcrumbs`), so the restart wipes it,
+`return_to_start()` becomes a no-op, and a valve left open stays open while
+`get_position()` — and therefore the UI — reports it closed. Stopping the brew
+first is almost always the right move.
+
+Both hooks are installed by hand; `install.sh` does not manage them. An existing
+Pi needs the three `pre-receive` lines from the setup block above run once, or
+its deploys stay ungated — `deploy/pi/preflight.sh` reports whether they are.
 
 **Always confirm it is driving real hardware.** `BREWCTL_IS_PROD` defaults to
 false, and when it is not exactly `true` the service starts happily on
