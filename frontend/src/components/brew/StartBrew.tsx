@@ -199,7 +199,7 @@ export default function StartBrew() {
         <label className="terminal-row" htmlFor={targetFlowRateInputId}>[g/s] TARGET_FLOW_RATE:_</label>
         <Input
           value={targetFlowRate}
-          onChange={(e: any) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             setTargetFlowRate(e.target.value);
             setTargetFlowError(validateTargetFlowInput(e.target.value));
           }}
@@ -218,7 +218,7 @@ export default function StartBrew() {
         <label className="terminal-row" htmlFor={targetWeightInputId}>[g] TARGET_WEIGHT:_</label>
         <Input
           value={targetWeight}
-          onChange={(e: any) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             setTargetWeight(e.target.value);
             setTargetWeightError(validateTargetWeightInput(e.target.value));
           }}
@@ -237,7 +237,7 @@ export default function StartBrew() {
         <label className="terminal-row" htmlFor={valveIntervalInputId}>[sec] VALVE_INTERVAL:_</label>
         <Input
           value={valveInterval}
-          onChange={(e: any) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             setValveInterval(e.target.value);
             setValveIntervalError(validateValveIntervalInput(e.target.value));
           }}
@@ -256,7 +256,7 @@ export default function StartBrew() {
         <label className="terminal-row" htmlFor={epsilonInputId}>[g/s] EPSILON:_</label>
         <Input
           value={epsilon}
-          onChange={(e: any) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             setEpsilon(e.target.value);
             setEpsilonError(validateEpsilonInput(e.target.value));
           }}

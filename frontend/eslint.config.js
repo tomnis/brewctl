@@ -19,6 +19,12 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Destructuring a prop purely to keep it out of the ...props spread is
+      // intentional; mark it with a leading underscore.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
