@@ -1,0 +1,137 @@
+# Tests + image build for the GitHub mirror.
+#
+# This is a check, not a deploy. Forgejo (.forgejo/workflows/) remains
+# authoritative for publishing and promotion: it can reach the control host on
+# the LAN, GitHub cannot. Nothing here pushes an image anywhere -- the image is
+# built and smoke-tested on the runner and thrown away with it.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    # deploy/** is promotion, not code -- a one-line bump to image.tag cannot
+    # change what this workflow would build.
+    paths-ignore:
+      - 'deploy/**'
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # Forgejo/Gitea Actions also scan .github/workflows, so this file is picked
+    # up there too -- where ubuntu-latest matches no runner label (they are
+    # docker/dind) and the job would queue forever. Gate on the server so this
+    # runs on GitHub only; Forgejo keeps using .forgejo/workflows/build.yml.
+    if: ${{ github.server_url == 'https://github.com' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the contract diff below has both endpoints.
+          fetch-depth: 0
+
+      # 3.13 matches the runtime stage of the root Dockerfile, so this catches
+      # version-sensitive behaviour the Forgejo runner (whatever python its
+      # image ships) does not.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.txt
+
+      # dev.txt is api + pytest and deliberately excludes hardware.txt, whose
+      # bluepy/RPi.GPIO will not build off-Pi. No venv: the runner is ephemeral.
+      - name: Backend tests
+        run: |
+          cd backend
+          pip install --quiet -r requirements/dev.txt
+          pytest tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '25.3.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend lint, tests, build
+        run: |
+          cd frontend
+          npm ci --no-audit
+          npm run lint
+          npm run test:run
+          npm run build
+
+      # The Pi is deployed by hand and never self-updates, so a contract bump
+      # that ships to the control host without a matching push to the Pi will
+      # block brewing. Say so loudly rather than discovering it at brew time.
+      - name: Warn on hardware contract change
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+          if git diff --name-only "$base" "$head" 2>/dev/null \
+               | grep -q 'backend/src/brewctl/core/contract.py'; then
+            echo "::warning::hardware contract changed -- run 'make deploy-device' or brews will be refused"
+          fi
+
+  build:
+    if: ${{ github.server_url == 'https://github.com' }}
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      # The root Dockerfile builds the frontend and bundles it into the api
+      # image, so the context is the whole repo. No registry, no push.
+      - name: Build image
+        run: docker build -t brewctl:ci .
+
+      - name: Smoke test the image
+        run: |
+          set -e
+          docker rm -f brewctl-smoke 2>/dev/null || true
+          # No hardware and no InfluxDB here: the api starts anyway and reports
+          # "degraded", which is enough to prove the image boots and serves.
+          #
+          # BREWCTL_HARDWARE_URL must still be *set* -- it has no default, and
+          # api/server.py builds HttpScale at import time, so an unset value
+          # crashes on startup with
+          # `AttributeError: 'NoneType' object has no attribute 'rstrip'`.
+          # Port 9 (discard) is a valid URL that is reliably dead, which is
+          # exactly the degraded state being tested.
+          docker run -d --name brewctl-smoke \
+            -e BREWCTL_MODE=api \
+            -e BREWCTL_IS_PROD=false \
+            -e BREWCTL_HARDWARE_URL=http://127.0.0.1:9 \
+            brewctl:ci
+
+          # Probe from inside the container rather than through a published
+          # port. /api/health, NOT "/" -- "/" is a 307 to /app/ and reports the
+          # static bundle, not the api.
+          probe='import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/api/health").status==200 else 1)'
+          ok=""
+          for _ in $(seq 1 30); do
+            if docker exec brewctl-smoke python -c "$probe" 2>/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "api did not become healthy"
+            docker logs brewctl-smoke
+            exit 1
+          fi
+
+          # The frontend is baked into this image and served at /app. A build
+          # that silently shipped without the bundle looks perfectly healthy.
+          docker exec brewctl-smoke python -c \
+            'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/app/").status==200 else 1)'
+
+      - name: Clean up container
+        if: always()
+        run: docker rm -f brewctl-smoke 2>/dev/null || true
