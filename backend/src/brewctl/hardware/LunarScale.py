@@ -7,6 +7,7 @@ import pyacaia
 import threading
 import time
 
+from ..core.ble_processes import kill_orphaned_helpers
 from ..core.log import logger
 from ..core.config import (
     BREWCTL_SCALE_RECONNECT_RETRIES,
@@ -27,6 +28,12 @@ class LunarScale(AbstractScale):
         # reconnect_with_backoff() swaps self.scale from a threadpool worker while
         # the SSE tick, /health and /api/scale/status read it from others.
         self._lock = threading.Lock()
+        # Serializes build+connect across every driver (scale_monitor,
+        # POST /api/scale/connect from start_brew, manual calls). Two overlapping
+        # connects race for the scale's single BLE slot; the loser leaks its
+        # bluepy-helper with a live link that blocks all later attempts. With the
+        # lock, a loser waits instead of leaking.
+        self._connect_lock = threading.Lock()
         # Allow override of defaults via constructor, otherwise use config
         self.max_retries = max_retries if max_retries is not None else BREWCTL_SCALE_RECONNECT_RETRIES
         self.base_delay = base_delay if base_delay is not None else BREWCTL_SCALE_RECONNECT_BASE_DELAY
@@ -43,10 +50,12 @@ class LunarScale(AbstractScale):
         # and only a notification packet sets it, so carrying the old timestamp over
         # would mask a connection that reconnects but never streams.
         self.clear_weight_history()
-        with self._lock:
+        # Build AND connect under the serialization lock: overlapping connects race
+        # for the scale's single BLE slot and the loser leaks its helper.
+        with self._connect_lock:
             self.scale = AcaiaScale(self.mac_address)
             scale = self.scale
-        return scale.connect()
+            return scale.connect()
 
     def reconnect_with_backoff(self) -> bool:
         """
@@ -60,19 +69,30 @@ class LunarScale(AbstractScale):
             try:
                 logger.info(f"Scale connection attempt {attempt + 1}/{self.max_retries} for MAC {self.mac_address}...")
                 self.clear_weight_history()
-                with self._lock:
+                with self._connect_lock:
                     self.scale = AcaiaScale(self.mac_address)
                     scale = self.scale
-                result = scale.connect()
+                    result = scale.connect()
 
                 if result or scale.connected:
                     logger.info(f"Successfully connected to scale at MAC {self.mac_address} on attempt {attempt + 1}")
                     return True
-                    
+
             except Exception as e:
                 last_error = e
                 logger.warning(f"Scale connection attempt {attempt + 1} failed: {e}")
-            
+                # The failed attempt may leave its bluepy-helper alive holding a
+                # half-established HCI link -- the leaked link then holds the
+                # scale's single connection slot and every later attempt refuses.
+                # Best-effort teardown of what we own, then sweep orphans.
+                try:
+                    scale.disconnect()
+                except Exception:
+                    logger.debug("Best-effort disconnect after failed attempt raised", exc_info=True)
+                killed = kill_orphaned_helpers()
+                if killed:
+                    logger.warning(f"Swept orphaned bluepy-helper processes: {killed}")
+
             # Calculate delay with exponential backoff, capped at max_delay
             if attempt < self.max_retries - 1:  # Don't sleep after the last attempt
                 delay = min(self.base_delay * (2 ** attempt), self.max_delay)
@@ -87,10 +107,16 @@ class LunarScale(AbstractScale):
         # read (connected, /health, the SSE tick, the scale monitor) raise
         # AttributeError instead of simply reporting a disconnected scale, which
         # left nothing able to drive a reconnect.
-        scale = self.scale
-        if scale is not None:
-            scale.disconnect()
-        self.clear_weight_history()
+        with self._connect_lock:
+            scale = self.scale
+            if scale is not None:
+                scale.disconnect()
+            self.clear_weight_history()
+            # The disconnect path is the cancel-a-brew entry point; a helper
+            # leaked by an earlier failed attempt survives this call otherwise.
+            killed = kill_orphaned_helpers()
+        if killed:
+            logger.warning(f"Swept orphaned bluepy-helper processes: {killed}")
         time.sleep(0.5)
 
     def get_weight(self) -> float:

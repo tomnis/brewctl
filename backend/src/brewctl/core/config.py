@@ -57,3 +57,14 @@ BREWCTL_SCALE_RECONNECT_BASE_DELAY = float(
 BREWCTL_SCALE_RECONNECT_MAX_DELAY = float(
     os.environ.get("BREWCTL_SCALE_RECONNECT_MAX_DELAY", "30.0")
 )
+# Patience window for a CONNECTED-but-silent scale. The hardware scale monitor
+# keeps the BLE link for this long before tearing it down (a connected scale
+# that is not streaming may simply be an event-driven one between weight
+# changes; reconnect churn made recovery worse -- see
+# docs/plans/scale-recovery-stability-plan.md). The api uses the same value as
+# a brew guard: silence longer than this mid-brew fails the brew and returns
+# the valve, because the strategy cannot act on a None flow and the valve
+# would otherwise pour open-loop. 0 disables the api-side guard.
+BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS = float(
+    os.environ.get("BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS", "30.0")
+)

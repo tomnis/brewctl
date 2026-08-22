@@ -33,6 +33,23 @@ SCALE_MONITOR_INTERVAL_SECONDS = float(
     os.getenv("BREWCTL_SCALE_MONITOR_INTERVAL_SECONDS", "5.0")
 )
 
+# Patience window for a CONNECTED-but-silent scale. The Lunar streams at 5 Hz,
+# so silence normally means the notification stream is dead -- but it may also
+# be quiet simply because nothing has changed, and reconnect churn through the
+# leaky BLE path makes recovery strictly worse
+# (docs/plans/scale-recovery-stability-plan.md). A connected scale is left
+# alone until it has been silent this long; past that, assume the dead-stream
+# disease and rebuild. "Never delivered anything" skips patience entirely --
+# that IS the disease. Shared with the api, which fails a brewing beer at the
+# same threshold.
+BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS = float(
+    os.getenv("BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS", "30.0")
+)
+
+# Set by the disconnect endpoint so the monitor's next tick runs immediately
+# instead of up to a full interval after a deliberate teardown.
+_monitor_kick = threading.Event()
+
 # pyacaia logs the one line that explains a silent scale -- "Heartbeat failed <e>"
 # from the thread that owns both the keepalive and the notification pump -- at
 # DEBUG, and swallows the exception. Set BREWCTL_HARDWARE_LOG_LEVEL=DEBUG on the
@@ -181,7 +198,12 @@ async def scale_monitor():
     This is also the only thing that connects the scale at startup.
     """
     while True:
-        await asyncio.sleep(SCALE_MONITOR_INTERVAL_SECONDS)
+        if _monitor_kick.is_set():
+            # A deliberate teardown (disconnect endpoint) wants the next tick
+            # now rather than up to a full interval later.
+            _monitor_kick.clear()
+        else:
+            await asyncio.sleep(SCALE_MONITOR_INTERVAL_SECONDS)
         try:
             # Re-read the global each tick rather than capturing it: tests (and
             # the disconnect endpoint) swap it out from under us.
@@ -193,8 +215,23 @@ async def scale_monitor():
                 continue
 
             age = s.last_weight_age_seconds()
+            connected = s.connected
+
+            # Patience: a CONNECTED scale that has gone quiet is left linked
+            # until the silence window expires. Reconnecting through the leaky
+            # BLE path on every quiet tick made recovery strictly worse. Two
+            # conditions skip patience: the link itself is down, or nothing has
+            # EVER arrived (age None -- the pyacaia dead-subscription disease
+            # this loop exists to cure).
+            if connected and age is not None and age < BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS:
+                logger.info(
+                    f"Scale connected but quiet ({age:.1f}s since last reading) -- "
+                    f"keeping the link (patience {BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS:.0f}s)."
+                )
+                continue
+
             logger.warning(
-                f"Scale unhealthy (connected={s.connected}, "
+                f"Scale unhealthy (connected={connected}, "
                 f"last reading {'never' if age is None else f'{age:.1f}s ago'}). "
                 "Reconnecting."
             )
@@ -550,4 +587,7 @@ async def disconnect_scale():
         raise HTTPException(status_code=503, detail="scale not available")
 
     await asyncio.to_thread(scale.disconnect)
+    # The monitor would rebuild the link within one interval anyway; the kick
+    # makes the post-teardown reconnect immediate (brew cancel/stop path).
+    _monitor_kick.set()
     return {"status": "disconnected"}

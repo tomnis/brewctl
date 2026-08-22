@@ -7,6 +7,12 @@ soon as BLE notifications are subscribed, before any weight packet arrives, and
 never resets weight back to None once set. So a scale whose notification thread
 died reports connected forever while every read returns None, until the process
 restarts. `connected` alone therefore cannot drive recovery -- staleness must.
+
+Policy since docs/plans/scale-recovery-stability-plan.md: a CONNECTED scale is
+given a patience window (BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS) before being
+torn down -- reconnect churn through the leaky BLE path made recovery strictly
+worse. Two conditions skip patience: the link itself is down, or nothing has
+EVER arrived (age None -- the disease itself).
 """
 
 import asyncio
@@ -22,10 +28,12 @@ def fast_monitor(monkeypatch):
     """Shrink the monitor interval so a tick happens in milliseconds."""
     monkeypatch.setattr(hw_server, "SCALE_MONITOR_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(hw_server, "SCALE_MAX_WEIGHT_AGE_SECONDS", 10.0)
+    monkeypatch.setattr(hw_server, "BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS", 30.0)
+    hw_server._monitor_kick.clear()
 
-    def _install(healthy: bool, age=None):
+    def _install(healthy: bool, age=999.0, connected: bool = True):
         scale = MagicMock()
-        scale.connected = True
+        scale.connected = connected
         scale.healthy.return_value = healthy
         scale.last_weight_age_seconds.return_value = age
         scale.reconnect_with_backoff.return_value = True
@@ -52,9 +60,51 @@ def run_monitor_for(seconds: float) -> bool:
     return asyncio.run(_run())
 
 
-def test_reconnects_a_connected_but_silent_scale(fast_monitor):
-    """The whole point: connected is True, readings are not arriving."""
-    scale = fast_monitor(healthy=False)
+def test_reconnects_after_quiet_exceeds_the_patience_window(fast_monitor):
+    """Connected but silent far past the window: assume dead stream, rebuild."""
+    scale = fast_monitor(healthy=False, age=999.0)
+
+    run_monitor_for(0.1)
+
+    scale.reconnect_with_backoff.assert_called()
+
+
+def test_keeps_the_link_while_quiet_within_the_patience_window(fast_monitor):
+    """
+    Connected and recently streaming: leave it alone. The stream may be quiet
+    simply because nothing changed; reconnect churn made things worse.
+    """
+    scale = fast_monitor(healthy=False, age=5.0)
+
+    run_monitor_for(0.1)
+
+    scale.reconnect_with_backoff.assert_not_called()
+
+
+def test_never_delivered_skips_patience(fast_monitor):
+    """
+    age None means not one packet has ever arrived on this connection -- that
+    is the pyacaia dead-subscription disease itself, so no patience.
+    """
+    scale = fast_monitor(healthy=False, age=None)
+
+    run_monitor_for(0.1)
+
+    scale.reconnect_with_backoff.assert_called()
+
+
+def test_a_disconnected_scale_skips_patience(fast_monitor):
+    scale = fast_monitor(healthy=False, age=0.0, connected=False)
+
+    run_monitor_for(0.1)
+
+    scale.reconnect_with_backoff.assert_called()
+
+
+def test_patience_window_is_configurable(fast_monitor, monkeypatch):
+    monkeypatch.setattr(hw_server, "BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS", 3.0)
+    # Quiet for 5s: inside the 30s default but past a 3s window.
+    scale = fast_monitor(healthy=False, age=5.0)
 
     run_monitor_for(0.1)
 
@@ -125,3 +175,24 @@ def test_counts_reconnect_cycles(fast_monitor):
 
     body = metrics.metrics_response().body.decode()
     assert "brewctl_scale_reconnects_total" in body
+
+
+def test_kick_prompts_an_immediate_tick_despite_a_long_interval(
+    fast_monitor, monkeypatch
+):
+    """The disconnect endpoint sets the kick so post-teardown reconnect is
+    immediate rather than up to a full (here: hour-long) interval later."""
+    monkeypatch.setattr(hw_server, "SCALE_MONITOR_INTERVAL_SECONDS", 3600.0)
+    scale = fast_monitor(healthy=False)
+    hw_server._monitor_kick.set()
+
+    run_monitor_for(0.1)
+
+    scale.reconnect_with_backoff.assert_called()
+
+
+def test_disconnect_endpoint_sets_the_monitor_kick(hardware_client):
+    """Cancel/stop POSTs here; the kick is what makes recovery immediate."""
+    hardware_client.post("/api/scale/disconnect")
+
+    assert hw_server._monitor_kick.is_set()

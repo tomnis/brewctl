@@ -21,6 +21,7 @@ from pydantic import field_validator
 from typing import Annotated
 
 from brewctl.core.log import logger
+from brewctl.core.config import BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS
 from brewctl.core.contract import HARDWARE_API_VERSION, MIN_HARDWARE_API_VERSION
 from brewctl.core.config import *
 from brewctl.core import metrics as brew_metrics
@@ -507,6 +508,9 @@ class MatchBrewId(BaseModel):
 async def collect_scale_data_task(brew_id, s):
     """Collect scale data every s seconds while brew_id matches current brew id."""
     global cur_brew
+    # Tracks how long the scale has returned None while BREWING (the open-loop
+    # pour guard below). Reset on any real reading and on pause.
+    silence_since = None
     while brew_id is not None and cur_brew is not None and brew_id == cur_brew.id:
         try:
             # Collect data when actively brewing or in error state (to recover)
@@ -521,6 +525,28 @@ async def collect_scale_data_task(brew_id, s):
                 battery_pct = scale_state.battery_pct
                 if weight is None:
                     logger.warn("Scale returned no weight")
+                    # Open-loop pour guard: the strategy cannot act on a None
+                    # flow (NOOP) and cannot STOP on a None weight, so a silent
+                    # scale mid-brew means the valve freezes wherever it is.
+                    # The hardware monitor holds the BLE link for this same
+                    # window before rebuilding; past it, fail the brew and put
+                    # the valve back rather than pouring unattended.
+                    if cur_brew.status == BrewState.BREWING and BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS > 0:
+                        now = time.monotonic()
+                        if silence_since is None:
+                            silence_since = now
+                        elif now - silence_since >= BREWCTL_SCALE_SILENCE_RECONNECT_SECONDS:
+                            logger.error(
+                                f"Scale silent for {now - silence_since:.0f}s mid-brew -- "
+                                "failing the brew and returning the valve."
+                            )
+                            cur_brew.status = BrewState.ERROR
+                            cur_brew.error_message = (
+                                f"scale silent for {now - silence_since:.0f}s mid-brew"
+                            )
+                            await asyncio.to_thread(valve.return_to_start)
+                else:
+                    silence_since = None
                 if weight is not None and battery_pct is not None:
                     # logger.info(f"Brew ID: (writing influxdb data) {cur_brew.id} Weight: {weight}, Battery: {battery_pct}%")
                     time_series.write_scale_data(

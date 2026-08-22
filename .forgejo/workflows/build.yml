@@ -245,10 +245,13 @@ jobs:
             args="$args ${{ steps.tag.outputs.repo }}:$t"
           done
           # gzip -1: the link is a LAN, so CPU is the bottleneck, not bandwidth.
+          # The remote command is decorative: the deploy key has an
+          # authorized_keys command= forced command (receive-image.sh) that runs.
+          # string lands in SSH_ORIGINAL_COMMAND, unread. Only stdin matters.
           docker save $args \
             | gzip -1 \
             | ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes \
-                  "${DEPLOY_USER}@${DEPLOY_HOST}" 'gunzip | docker load'
+                  "${DEPLOY_USER}@${DEPLOY_HOST}" 'ignored command=foo'
 
       # Old images accumulate on a box with a finite pool, and every branch publishes
       # here, so this is load-bearing rather than tidiness. Keep the newest
