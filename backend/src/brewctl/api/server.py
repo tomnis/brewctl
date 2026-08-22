@@ -77,6 +77,11 @@ _strategy_switch_lock = asyncio.Lock()
 # straight into a valve command, so an unbounded switch rate is an unbounded valve
 # command rate.
 STRATEGY_SWITCH_MIN_INTERVAL_SECONDS = 10.0
+
+# How long start_brew waits for the first scale SSE frame before judging the
+# scale's health. Three hardware ticks (SCALE_SSE_INTERVAL is 2s there), so a
+# slow first frame does not read as a dead scale.
+SCALE_FIRST_FRAME_TIMEOUT_SECONDS = 6.0
 _last_strategy_switch_at: float | None = None
 
 
@@ -290,6 +295,23 @@ def get_influxdb_health() -> dict:
         return {"connected": False, "error": str(e)}
 
 
+def scale_health_verdict() -> bool | None:
+    """The hardware service's scale-health verdict, or None when there is none.
+
+    None means "unknown, do not block": a Pi on hardware contract v1 does not send
+    the field, and the simulated scale installed for a dry run has no opinion. Only
+    an explicit False is a real "connected but not streaming".
+    """
+    checker = getattr(scale, "is_healthy", None)
+    if checker is None:
+        return None
+    try:
+        return checker()
+    except Exception as e:
+        logger.error(f"Error reading scale health: {e}")
+        return None
+
+
 def get_component_health() -> dict:
     """
     Get health status of all components (scale, valve, influxdb).
@@ -298,6 +320,7 @@ def get_component_health() -> dict:
     # Check scale status
     scale_health = {
         "connected": False,
+        "healthy": None,
         "battery_pct": None,
         "weight": None,
         "units": None,
@@ -306,6 +329,7 @@ def get_component_health() -> dict:
         scale_status = get_scale_status()
         scale_health = {
             "connected": scale_status.connected,
+            "healthy": scale_health_verdict(),
             "battery_pct": scale_status.battery_pct,
             "weight": scale_status.weight,
             "units": scale_status.units,
@@ -384,11 +408,12 @@ def health_check():
     global cur_brew
 
     # Check scale status
-    scale_health = {"connected": False, "battery_pct": None}
+    scale_health = {"connected": False, "healthy": None, "battery_pct": None}
     try:
         scale_status = get_scale_status()
         scale_health = {
             "connected": scale_status.connected,
+            "healthy": scale_health_verdict(),
             "battery_pct": scale_status.battery_pct,
         }
     except Exception as e:
@@ -431,6 +456,11 @@ def health_check():
     critical_issues = []
     if not scale_health["connected"]:
         critical_issues.append("scale not connected")
+    elif scale_health["healthy"] is False:
+        # elif, not if: a silent scale and a disconnected one are the same fault
+        # reported twice. Counting both would push "silent scale + valve down" from
+        # DEGRADED to UNHEALTHY, which apply.sh refuses to deploy against.
+        critical_issues.append("scale connected but not reporting weight")
     if not valve_health["available"]:
         critical_issues.append("valve not available")
     if not hardware_compat["compatible"]:
@@ -819,6 +849,37 @@ async def start_brew(req: StartBrewRequest | None = None):
             raise HTTPException(
                 status_code=503,
                 detail="Could not connect to scale after multiple attempts",
+            )
+
+    # A connected scale is not necessarily a working one: pyacaia marks the Lunar
+    # connected as soon as BLE notifications are subscribed, and if that stream
+    # dies every read comes back None until the hardware service reconnects. A brew
+    # started against one drives the valve off no feedback at all.
+    #
+    # Skipped for dry runs, like the version check above -- there is no Pi involved.
+    if not dry_run:
+        # The scale above may have been constructed seconds ago, and the hardware
+        # ticks its SSE stream every SCALE_SSE_INTERVAL (2s) while
+        # reconnect_with_backoff only sleeps 0.5s. Judging it before the first frame
+        # lands would refuse essentially every real brew.
+        waiter = getattr(scale, "wait_for_first_frame", None)
+        if waiter is not None:
+            waiter(SCALE_FIRST_FRAME_TIMEOUT_SECONDS)
+
+        if scale_health_verdict() is False:
+            age = getattr(scale, "last_weight_age_seconds", lambda: None)()
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "scale_unhealthy",
+                    "message": (
+                        "The scale is connected but has not reported a weight "
+                        f"{'at all' if age is None else f'for {age:.1f}s'}. Its "
+                        "Bluetooth stream is likely dead; the hardware service is "
+                        "reconnecting. Retry in a few seconds."
+                    ),
+                    "last_weight_age_seconds": age,
+                },
             )
 
     # Only allow starting if no brew or brew is completed/error

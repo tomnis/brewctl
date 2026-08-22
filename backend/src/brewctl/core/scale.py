@@ -1,5 +1,6 @@
 import random
 import threading
+import time
 from abc import ABC, abstractmethod
 
 from brewctl.core.log import logger
@@ -12,6 +13,10 @@ class AbstractScale(ABC):
 
     Designed as a wrapper around Lunar scale to allow for easier mocking and testing.
     """
+
+    # Set by note_weight(), read by the staleness helpers. A class attribute rather
+    # than an __init__ assignment because no subclass here calls super().__init__().
+    _last_weight_time: float | None = None
 
     @property
     @abstractmethod
@@ -43,6 +48,38 @@ class AbstractScale(ABC):
     def get_battery_percentage(self) -> int:
         """Get the battery percentage of the scale."""
         pass
+
+    def note_weight(self, weight) -> None:
+        """
+        Record that a real weight reading arrived.
+
+        `connected` is not enough to know the scale is working: pyacaia flips it True
+        when notifications are set up, which is before any weight packet arrives, and
+        `AcaiaScale.weight` stays None until the first one does. A scale whose BLE
+        notification stream died therefore reports connected forever while returning
+        None -- the failure this tracking exists to catch.
+        """
+        if weight is not None:
+            self._last_weight_time = time.monotonic()
+
+    def last_weight_age_seconds(self) -> float | None:
+        """Seconds since the last real reading, or None if there has never been one."""
+        if self._last_weight_time is None:
+            return None
+        return time.monotonic() - self._last_weight_time
+
+    def is_weight_stale(self, max_age: float) -> bool:
+        """True when no reading has arrived within max_age -- including never."""
+        age = self.last_weight_age_seconds()
+        return age is None or age > max_age
+
+    def healthy(self, max_age: float) -> bool:
+        """Connected *and* actually delivering readings."""
+        return self.connected and not self.is_weight_stale(max_age)
+
+    def clear_weight_history(self) -> None:
+        """Forget the last reading, so a fresh connection has to prove itself."""
+        self._last_weight_time = None
 
     def reconnect_with_backoff(self) -> bool:
         """
@@ -94,6 +131,11 @@ class MockScale(AbstractScale):
     def _run_updater(self):
         """Background loop that increments weight every 2 seconds."""
         while not self._stop_event.wait(2.0):
+            # A None weight is how tests stand in for the real failure -- a scale
+            # that reads but carries no value. Leave it None rather than crashing
+            # the thread, so it stays None for the staleness check to catch.
+            if self._weight is None:
+                continue
             delta = random.random() / 2
             self._weight += delta
 
@@ -105,8 +147,8 @@ class MockScale(AbstractScale):
 
     def get_weight(self) -> float:
         """Get the current weight in grams from the scale."""
+        self.note_weight(self._weight)
         return self._weight
-        # raise Exception("mock scale error")
 
     def get_units(self) -> str:
         return self._units

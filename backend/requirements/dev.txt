@@ -7,3 +7,8 @@
 -r api.txt
 
 pytest==9.0.2
+# Shuffles test order every run (seed in the banner, repro via --randomly-seed).
+# Test isolation here depends on per-test fixtures, not execution order -- this
+# is what keeps that true. A failure that only shows up sometimes means an
+# order dependency: rerun with the printed seed to reproduce.
+pytest-randomly==4.1.0

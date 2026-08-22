@@ -16,6 +16,11 @@ def heartbeat_valve(client, monkeypatch, mock_valve):
     import brewctl.api.server as server_module
 
     monkeypatch.setattr(server_module, "valve", mock_valve)
+    # The client fixture installs mock_valve as the module global *before* TestClient
+    # starts, so lifespan startup has already sent one connect+heartbeat through it.
+    # These tests count heartbeats from the call under test only -- drop the
+    # startup traffic. (reset_mock keeps the return_value configured in conftest.)
+    mock_valve.reset_mock()
     monkeypatch.setattr(server_module, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
     return server_module, mock_valve
 

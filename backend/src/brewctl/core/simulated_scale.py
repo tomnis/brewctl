@@ -75,6 +75,7 @@ class SimulatedScale(AbstractScale):
         # keep filling: the brew loop calls disconnect() when a brew completes,
         # and a weight that carried on climbing afterwards would look like a leak.
         if not self._connected:
+            self.note_weight(self._weight)
             return self._weight
 
         position = getattr(self._valve, "position", self._valve.get_position())
@@ -83,6 +84,7 @@ class SimulatedScale(AbstractScale):
         if delta > 0:
             delta += delta * random.uniform(-NOISE_FRACTION, NOISE_FRACTION)
         self._weight += delta
+        self.note_weight(self._weight)
         return self._weight
 
     def get_units(self) -> str:

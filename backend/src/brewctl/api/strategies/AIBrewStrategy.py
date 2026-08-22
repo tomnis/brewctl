@@ -60,6 +60,28 @@ _RESPONSE_SCHEMA = {
     "additionalProperties": False,
 }
 
+# Predictive variant. `predicted_flow_rate` deliberately comes *first*: the grammar
+# emits fields in schema order, so the model commits to a prediction before it
+# picks an action, and the action is then conditioned on that number. It is
+# chain-of-thought reduced to a single token-cheap number -- the useful part of
+# thinking without the 900-token trace a reasoning model spends on it.
+_PREDICTIVE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        # Nullable on purpose. A required *number* here forced the model to invent
+        # a prediction when flow_rate was unknown -- it extrapolated the history,
+        # applied the band rule to that invention, and returned FORWARD on a
+        # reading it never actually had. Allowing null lets "unknown" survive the
+        # grammar instead of being laundered into a number.
+        "predicted_flow_rate": {"type": ["number", "null"]},
+        "action": {"type": "string", "enum": sorted(_ALLOWED_ACTIONS)},
+        "interval_seconds": {"type": "number"},
+        "reason": {"type": "string"},
+    },
+    "required": ["predicted_flow_rate", "action", "interval_seconds", "reason"],
+    "additionalProperties": False,
+}
+
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 
@@ -110,9 +132,12 @@ class AIBrewStrategy(AbstractBrewStrategy):
         base_url: str = None,
         timeout_seconds: float = None,
         temperature: float = 0.0,
-        history_points: int = 12,
+        history_points: int = 3,
         min_interval: float = 5.0,
         max_interval: float = None,
+        predictive: bool = False,
+        dead_time_seconds: float = 120.0,
+        max_flow_rate_multiple: float = 4.0,
         warmup: bool = True,
     ):
         self.target_flow_rate = target_flow_rate
@@ -129,6 +154,13 @@ class AIBrewStrategy(AbstractBrewStrategy):
             timeout_seconds if timeout_seconds is not None else BREWCTL_LLM_TIMEOUT_SECONDS
         )
         self.temperature = temperature
+        # Ask the model to predict the next flow rate before acting, to compensate
+        # for the coffee bed's dead time. See _build_messages.
+        self.predictive = predictive
+        self.dead_time_seconds = dead_time_seconds
+        # Hard ceiling for the Python guard in step(). Above this the model does not
+        # get a vote: a runaway flow closes the valve whatever it says.
+        self.max_flow_rate = target_flow_rate * max(1.0, max_flow_rate_multiple)
         self.min_interval = min_interval
         self.max_interval = max_interval if max_interval is not None else valve_interval
 
@@ -182,9 +214,9 @@ class AIBrewStrategy(AbstractBrewStrategy):
             },
             "history_points": {
                 "type": "number",
-                "default": 12,
+                "default": 3,
                 "label": "History Points",
-                "description": "Recent readings shown to the model as context",
+                "description": "Recent readings as context; more is measurably worse, see docs",
             },
             "min_interval": {
                 "type": "number",
@@ -197,6 +229,24 @@ class AIBrewStrategy(AbstractBrewStrategy):
                 "default": BREWCTL_VALVE_INTERVAL_SECONDS,
                 "label": "Max Interval (s)",
                 "description": "Ceiling on the wait the model asks for",
+            },
+            "predictive": {
+                "type": "string",
+                "default": "false",
+                "label": "Predictive Mode",
+                "description": "true to predict next flow before acting (dead-time compensation)",
+            },
+            "dead_time_seconds": {
+                "type": "number",
+                "default": 120.0,
+                "label": "Bed Dead Time (s)",
+                "description": "How long a valve change takes to show up in flow",
+            },
+            "max_flow_rate_multiple": {
+                "type": "number",
+                "default": 4.0,
+                "label": "Max Flow (x target)",
+                "description": "Above this multiple of target, Python forces BACKWARD",
             },
         }
 
@@ -233,6 +283,14 @@ class AIBrewStrategy(AbstractBrewStrategy):
             max_interval=_coerce_float(
                 strategy_params.get("max_interval"), valve_interval
             ),
+            predictive=str(strategy_params.get("predictive", "")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dead_time_seconds=_coerce_float(
+                strategy_params.get("dead_time_seconds"), 120.0
+            ),
+            max_flow_rate_multiple=_coerce_float(
+                strategy_params.get("max_flow_rate_multiple"), 4.0
+            ),
         )
 
     # ----- LLM plumbing -----
@@ -263,6 +321,19 @@ class AIBrewStrategy(AbstractBrewStrategy):
             "messages": messages,
             "temperature": self.temperature,
             "stream": False,
+            # Suppress chain-of-thought on models that have a thinking mode.
+            # Measured on qwen3.5:9b: 30s without, 246s and 935 tokens with, for
+            # the same one-line decision. A thinking model left unconstrained
+            # exceeds any sane timeout and falls back every step. Servers that do
+            # not know the field ignore it.
+            "reasoning_effort": "none",
+            # temperature 0 alone does not make llama.cpp reproducible -- float
+            # non-associativity and batch composition still move sampling between
+            # runs, and models were observed answering FORWARD and BACKWARD to
+            # identical input. A fixed seed pins it, which matters here because a
+            # control loop that emits different commands for the same state is
+            # not debuggable.
+            "seed": 0,
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
@@ -275,7 +346,7 @@ class AIBrewStrategy(AbstractBrewStrategy):
                 "json_schema": {
                     "name": "valve_decision",
                     "strict": True,
-                    "schema": _RESPONSE_SCHEMA,
+                    "schema": _PREDICTIVE_SCHEMA if self.predictive else _RESPONSE_SCHEMA,
                 },
             }
 
@@ -294,21 +365,71 @@ class AIBrewStrategy(AbstractBrewStrategy):
         coffee_weight = (
             (current_weight - self.vessel_weight) if current_weight is not None else None
         )
-        system = (
+        # The band is computed here, not by the model. Every model benchmarked --
+        # including a 9B -- failed the "just inside the tolerance edge" cases when
+        # asked to derive it from "target +/- epsilon", and a 9B allowed to think
+        # spent its first reasoning step doing exactly this subtraction. Handing it
+        # two literal numbers removes the arithmetic from the model's job entirely.
+        low = self.target_flow_rate - self.epsilon
+        high = self.target_flow_rate + self.epsilon
+        common = (
             "You control a cold brew coffee valve. Each cycle you choose one action and "
             "how long to wait before deciding again.\n"
-            f"Target flow rate: {self.target_flow_rate:.4f} g/s "
-            f"(tolerance +/- {self.epsilon:.4f}).\n"
             "FORWARD opens the valve one step (more flow). BACKWARD closes it one step "
             "(less flow). NOOP leaves it where it is.\n"
-            "If flow is below target choose FORWARD, if above choose BACKWARD, if within "
-            "tolerance choose NOOP. If flow rate is unknown, choose NOOP.\n"
+            f"The acceptable flow_rate band is {low:.4f} to {high:.4f} g/s.\n"
+        )
+        limits = (
             f"interval_seconds must be between {self.min_interval:g} and "
             f"{self.max_interval:g}.\n"
-            "Reply with JSON only: "
-            '{"action": "FORWARD"|"BACKWARD"|"NOOP", "interval_seconds": <number>, '
-            '"reason": "<max 12 words>"}'
         )
+        if self.predictive:
+            # Dead-time compensation. A valve step takes ~dead_time_seconds to show
+            # up in the flow, because the water has to work through the bed. Acting
+            # on the instantaneous reading therefore stacks corrections that have
+            # not landed yet, and the loop oscillates. Asking for the prediction
+            # first -- and ordering it first in the schema -- makes the model commit
+            # to where the flow is heading before it picks an action.
+            system = (
+                common
+                + f"A valve change takes about {self.dead_time_seconds:g} seconds to show up in "
+                "flow_rate, because the water must work through the coffee bed. Recent "
+                "actions in the history may not have taken effect yet.\n"
+                "If flow_rate is unknown, set predicted_flow_rate to null and choose "
+                "NOOP. Do not guess a value from the history: this rule wins over "
+                "every rule below.\n"
+                "Otherwise estimate predicted_flow_rate: what flow_rate will be at the next "
+                "cycle, given the trend in the history and any recent action still "
+                "arriving. Then apply exactly one rule to your prediction:\n"
+                f"  predicted_flow_rate < {low:.4f}  -> FORWARD\n"
+                f"  predicted_flow_rate > {high:.4f}  -> BACKWARD\n"
+                f"  predicted_flow_rate between {low:.4f} and {high:.4f} (inclusive) -> NOOP\n"
+                # Deliberately unbounded, having measured the alternative. Adding
+                # explicit magnitude bounds here scored *worse* on 10 reps: it did
+                # not stop either model opening the valve on a 5.0 g/s runaway, and
+                # it cost qwen3.5:9b its dead-time behaviour (30/30 -> 20/30 on the
+                # cases the two rubrics disagree). Magnitude safety lives in
+                # _guard(), where it is deterministic; this line stays about trend.
+                "If flow_rate is outside the band but already moving toward it, predict it "
+                "keeps moving and choose NOOP rather than adding another change.\n"
+                + limits
+                + "Reply with JSON only: "
+                '{"predicted_flow_rate": <number>, "action": "FORWARD"|"BACKWARD"|"NOOP", '
+                '"interval_seconds": <number>, "reason": "<max 12 words>"}'
+            )
+        else:
+            system = (
+                common
+                + "Compare flow_rate to that band and apply exactly one rule:\n"
+                f"  flow_rate < {low:.4f}  -> FORWARD\n"
+                f"  flow_rate > {high:.4f}  -> BACKWARD\n"
+                f"  flow_rate between {low:.4f} and {high:.4f} (inclusive) -> NOOP\n"
+                "  flow_rate unknown -> NOOP\n"
+                + limits
+                + "Reply with JSON only: "
+                '{"action": "FORWARD"|"BACKWARD"|"NOOP", "interval_seconds": <number>, '
+                '"reason": "<max 12 words>"}'
+            )
         lines = [
             f"elapsed_s: {time.monotonic() - self.started_at:.1f}",
             f"flow_rate: {'unknown' if flow_rate is None else f'{flow_rate:.4f} g/s'}",
@@ -365,6 +486,34 @@ class AIBrewStrategy(AbstractBrewStrategy):
 
     # ----- the control step -----
 
+    def _guard(self, action: ValveCommand, flow_rate: Optional[float]) -> ValveCommand:
+        """Override the model on the two cases it is not allowed to get wrong.
+
+        Same reasoning as the STOP downgrade in step(): some decisions are Python's,
+        not the model's. Benchmarked at 10 reps, predictive-mode models answered
+        FORWARD on an unknown flow rate (having invented one from the history) and
+        NOOP on a 5.0 g/s runaway (having read the rising history as "trending
+        toward the band"). Both are prompt-level failures that a prompt fix can
+        only make less likely; this makes them impossible.
+
+        Applies to both variants -- the rule variant scored 100% on these cases,
+        so the guard is inert there, which is exactly what a backstop should be.
+        """
+        if flow_rate is None:
+            if action is not ValveCommand.NOOP:
+                logger.warning(
+                    f"guard: flow_rate unknown, overriding {action.name} -> NOOP"
+                )
+            return ValveCommand.NOOP
+        if flow_rate > self.max_flow_rate and action is not ValveCommand.BACKWARD:
+            logger.warning(
+                f"guard: flow_rate {flow_rate:.4f} g/s exceeds ceiling "
+                f"{self.max_flow_rate:.4f} g/s, overriding {action.name} -> BACKWARD"
+            )
+            return ValveCommand.BACKWARD
+        return action
+
+
     def step(
         self, flow_rate: Optional[float], current_weight: Optional[float]
     ) -> Tuple[ValveCommand, int]:
@@ -401,6 +550,7 @@ class AIBrewStrategy(AbstractBrewStrategy):
             interval = max(self.min_interval, min(self.max_interval, interval))
 
             reason = str(decision.get("reason", "")).strip()
+            action = self._guard(action, flow_rate)
             logger.info(f"LLM decision: {raw_action} for {interval:g}s -- {reason}")
 
             self._record(flow_rate, current_weight, action)
@@ -408,5 +558,8 @@ class AIBrewStrategy(AbstractBrewStrategy):
         except Exception as e:
             logger.warning(f"LLM step failed ({type(e).__name__}: {e}), falling back to default strategy")
             action, interval = self.fallback.step(flow_rate, current_weight)
+            # Guard the fallback too: it is a different code path, not a trusted one.
+            if action is not ValveCommand.STOP:
+                action = self._guard(action, flow_rate)
             self._record(flow_rate, current_weight, action)
             return action, interval

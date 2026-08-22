@@ -14,26 +14,32 @@
 # Only the api runs here. The hardware service runs bare metal on the Pi and is
 # deployed by hand with `make deploy-device`; it is never containerised.
 #
-# NOTE: literal values only, no ${VAR} interpolation. A Custom App has no .env
-# beside this file, so `${VAR}` would expand to empty and `${VAR:-default}` would
-# be worse -- it would silently mask a wrong Pi address instead of failing.
-# The consequence is that this file serves exactly one environment. That is fine.
+# NOTE: literal values only, with exactly two exceptions.
 #
-# The single exception is `@IMAGE@`, which apply.sh substitutes from
-# deploy/control/image.tag *before* the PUT, so what TrueNAS stores is still literal.
-# A distinct sigil rather than ${IMAGE} on purpose: it cannot be mistaken for
-# compose interpolation, and apply.sh refuses to apply a manifest where it
-# survives rendering.
+# 1. `@IMAGE@`: substituted by apply.sh from deploy/control/image.tag BEFORE the
+#    PUT, so what TrueNAS stores is still literal. A distinct sigil rather than
+#    ${IMAGE} on purpose -- it cannot be mistaken for compose interpolation, and
+#    apply.sh refuses to apply a manifest where it survives rendering.
+#
+# 2. The env_file mount below: an absolute host path read by docker compose at
+#    run time on the control host, outside git like the secrets dir. It feeds
+#    container ENV ONLY -- compose's env_file cannot interpolate compose-level
+#    settings, so the values it carries are applied by the container itself at
+#    start (see brewctl/core/container_net.py). Do not replace it with ${VAR}
+#    placeholders: interpolation sources a .env from the project directory,
+#    which TrueNAS manages -- it would expand empty.
+#
+# DEPLOY RULE: this file and deploy/control/image.tag move TOGETHER when the
+# manifest starts referencing code the pinned image does not contain. An
+# app.yaml-only deploy against an older image injects env vars nothing reads.
 
 services:
   # The service name is load-bearing: Traefik's defaultRule on this host builds
-  # the hostname from it, so this key is what makes brewctl.catacombs.local route.
+  # the hostname from it.
   brewctl:
     # Rendered from deploy/control/image.tag, which is where deploys happen and where
     # the pinning rationale lives. Nothing to edit here to deploy.
     #
-    # pull_policy: never because there is no registry -- the tag is local to this
-    # host's Docker daemon, put there by `docker load` (see
     # .forgejo/workflows/build.yml). Without it a typo'd tag hangs on a pull from
     # Docker Hub that can never succeed, instead of failing immediately.
     image: "@IMAGE@"
@@ -56,24 +62,35 @@ services:
     networks:
       - catacombs
 
-    dns:
-      - 172.16.8.53
-
-    # Belt and braces for the one name a brew actually depends on. /etc/hosts is
-    # consulted before any resolver, so InfluxDB stays reachable even if dns
-    # is restarting -- a Pi-hole update mid-brew would otherwise stop weight writes
-    extra_hosts:
-      - "influxdb.catacombs.local:192.168.0.69"
+    # The values that used to live here (dns server, influxdb hosts pin) are now
+    # delivered by env_file below and applied by the container at start
+    # (brewctl/core/container_net.py). env_file sets CONTAINER env -- it cannot
+    # interpolate compose-level keys like dns:/extra_hosts:, and ${VAR}
+    # interpolation would need a .env in the project directory, which TrueNAS
+    # owns. Hence this indirection. KNOWN SEMANTICS DRIFT: the appended
+    # nameserver is a glibc FALLBACK after Docker's embedded 127.0.0.11, not an
+    # upstream of it -- .local names depend on host-inherited forwarders unless
+    # pinned via BREWCTL_EXTRA_HOSTS. See the deploy plan's Architecture note.
+    env_file:
+      # Absolute path ON THE CONTROL HOST -- relative paths resolve against the
+      # managed project dir, which we do not control. Missing file fails the
+      # PUT validation loudly ("env file not found"); malformed values inside
+      # make the api refuse to start. Lives outside git, beside the secrets dir.
+      - /mnt/fast/apps/brewctl/env/brewctl.env
 
     environment:
       BREWCTL_MODE: api
       BREWCTL_IS_PROD: "true"
 
-      # The Pi, by IP. Not coldbrewer.local: mDNS does not resolve from inside a
-      # container. Give the Pi a DHCP reservation so this stays valid.
-      BREWCTL_HARDWARE_URL: "http://192.168.0.224:8000"
-
-      BREWCTL_INFLUXDB_URL: "http://influxdb.catacombs.local"
+      # Host URLs live server-side in brewctl.env, next to the DNS/hosts pins
+      # they depend on:
+      #
+      # BREWCTL_HARDWARE_URL -- the Pi, by IP (mDNS does not resolve from
+      #   inside a container; keep a DHCP reservation). Unset/blank refuses
+      #   to start when BREWCTL_IS_PROD=true (api/config.py).
+      # BREWCTL_INFLUXDB_URL -- resolved via the BREWCTL_EXTRA_HOSTS pin.
+      #   Unset only LOGS A WARNING and silently disables time series -- no
+      #   startup guard, so verify it landed after any env_file change.
       BREWCTL_INFLUXDB_ORG: "catacombs"
       BREWCTL_INFLUXDB_BUCKET: "coldbrew"
       # Read from the mounted secret, so the token appears neither in this file
@@ -84,12 +101,25 @@ services:
       BREWCTL_TARGET_WEIGHT_GRAMS: "1337"
       BREWCTL_VESSEL_WEIGHT_GRAMS: "229"
 
-      # AIBrewStrategy talks to Ollama on the ODROID. Any OpenAI-compatible
-      # server works -- swapping to llama.cpp or IPEX-LLM is this URL and
-      # nothing else. Check reachability from *inside* the api container, not
-      # from the host; those are different network paths.
-      BREWCTL_LLM_BASE_URL: "http://REPLACE_ME:11434"
-      BREWCTL_LLM_MODEL: "llama3.2:3b"
+      # AIBrewStrategy. Any OpenAI-compatible server works -- swapping the
+      # backing service is the base URL and nothing else.
+      #
+      # phi4-mini is an instruct model: 90/100 on backend/scripts/bench_llm_strategy.py
+      # with identical answers across all 10 repetitions of every case.
+      #
+      # Re-run that script before changing this, at >= 10 reps, and read the
+      # per-case rows rather than the total. granite4:3b scores *higher* (91/100)
+      # and answers BACKWARD to a normal below-target flow 8 times in 10 -- it
+      # would drive the valve shut mid-brew. Aggregate accuracy hides that; the
+      # per-case breakdown is the whole point of the script.
+      #
+      # Do not swap in a reasoning model (any qwen3/qwen3.5): forced to answer
+      # without thinking they misread the tolerance band, and allowed to think
+      # they take minutes per step.
+      #
+      # BREWCTL_LLM_BASE_URL is set server-side in brewctl.env (the same file
+      # that feeds the DNS/hosts pins); unset falls back to http://localhost:11434
+      BREWCTL_LLM_MODEL: "phi4-mini"
 
       # Both empty on purpose, and both are required. The api serves the UI itself
       # at /app, so requests are same-origin and CORS never applies.

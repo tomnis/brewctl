@@ -27,10 +27,11 @@ services:
       # is where they are set for production.
       - BREWCTL_VESSEL_WEIGHT_GRAMS
       - BREWCTL_TARGET_WEIGHT_GRAMS
-      # AIBrewStrategy. Any OpenAI-compatible server; defaults to a local Ollama,
-      # which from inside this container is the host, not localhost.
-      - BREWCTL_LLM_BASE_URL=${BREWCTL_LLM_BASE_URL:-http://host.docker.internal:11434}
-      - BREWCTL_LLM_MODEL=${BREWCTL_LLM_MODEL:-llama3.2:3b}
+      # AIBrewStrategy. Any OpenAI-compatible server; defaults to Ollama on
+      # localhost:11434. From inside this container "localhost" is the container
+      # itself -- set BREWCTL_LLM_BASE_URL when Ollama runs elsewhere.
+      - BREWCTL_LLM_BASE_URL=${BREWCTL_LLM_BASE_URL:-http://localhost:11434}
+      - BREWCTL_LLM_MODEL=${BREWCTL_LLM_MODEL:-phi4-mini}
     ports:
       - "8000:8000"
     volumes:

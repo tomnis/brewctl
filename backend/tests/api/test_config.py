@@ -63,8 +63,8 @@ def test_missing_hardware_url_defaults_off_prod(monkeypatch, reload_config):
 
 def test_hardware_url_used_when_set(monkeypatch, reload_config):
     monkeypatch.setenv("BREWCTL_IS_PROD", "true")
-    monkeypatch.setenv("BREWCTL_HARDWARE_URL", "http://coldbrewer.local:8000")
+    monkeypatch.setenv("BREWCTL_HARDWARE_URL", "http://device.internal:8000")
 
     reloaded = reload_config()
 
-    assert reloaded.BREWCTL_HARDWARE_URL == "http://coldbrewer.local:8000"
+    assert reloaded.BREWCTL_HARDWARE_URL == "http://device.internal:8000"

@@ -3,6 +3,7 @@ Unit tests for scale module.
 Tests the MockScale and AbstractScale classes.
 """
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -240,3 +241,70 @@ class TestScaleReconnection:
         
         # Attempt 5: delay = 0.5 * (2^5) = 16.0, capped at 10.0
         assert min(base_delay * (2 ** 5), max_delay) == 10.0
+
+
+class TestWeightStaleness:
+    """
+    A scale reports `connected` as soon as its notification subscription is set
+    up, which is before any reading arrives -- and pyacaia never resets weight to
+    None once set. So "connected" and "actually delivering readings" are separate
+    questions, and only the second one catches a dead BLE stream.
+    """
+
+    def test_never_seen_a_reading_is_stale(self):
+        scale = MockScale()
+
+        assert scale.last_weight_age_seconds() is None
+        assert scale.is_weight_stale(10.0)
+
+    def test_a_fresh_reading_is_not_stale(self):
+        scale = MockScale()
+        scale.connect()
+
+        scale.get_weight()
+
+        assert scale.last_weight_age_seconds() < 1.0
+        assert not scale.is_weight_stale(10.0)
+
+    def test_a_reading_ages_out(self, monkeypatch):
+        scale = MockScale()
+        scale.connect()
+        scale.get_weight()
+
+        # Pretend 30s of monotonic time passed.
+        real_monotonic = time.monotonic
+        monkeypatch.setattr(
+            "brewctl.core.scale.time.monotonic", lambda: real_monotonic() + 30.0
+        )
+
+        assert scale.is_weight_stale(10.0)
+        assert not scale.is_weight_stale(60.0)
+
+    def test_a_none_reading_does_not_count(self):
+        """The exact failure mode: reads succeed, but carry no weight."""
+        scale = MockScale()
+        scale.connect()
+        scale._weight = None
+
+        scale.get_weight()
+
+        assert scale.is_weight_stale(10.0)
+
+    def test_healthy_needs_both_connected_and_fresh(self):
+        scale = MockScale()
+        scale.connect()
+        scale.get_weight()
+        assert scale.healthy(10.0)
+
+        # Connected but silent -- the state this whole mechanism exists for.
+        scale.clear_weight_history()
+        assert scale.connected
+        assert not scale.healthy(10.0)
+
+    def test_disconnected_is_never_healthy(self):
+        scale = MockScale()
+        scale.connect()
+        scale.get_weight()
+        scale.disconnect()
+
+        assert not scale.healthy(10.0)

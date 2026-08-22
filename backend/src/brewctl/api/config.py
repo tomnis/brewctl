@@ -91,7 +91,7 @@ if not BREWCTL_HARDWARE_URL:
     if os.environ.get("BREWCTL_IS_PROD", "false") == "true":
         raise ValueError(
             "BREWCTL_IS_PROD is true but BREWCTL_HARDWARE_URL is not set. "
-            "Set it to the hardware service, e.g. http://coldbrewer.local:8000"
+            "Set it to the hardware service, e.g. http://device.internal:8000"
         )
     BREWCTL_HARDWARE_URL = BREWCTL_HARDWARE_DEFAULT_URL
     logger.warning(
@@ -107,10 +107,10 @@ logger.info(f"BREWCTL_HARDWARE_URL = {BREWCTL_HARDWARE_URL}")
 BREWCTL_LLM_BASE_URL = os.environ.get("BREWCTL_LLM_BASE_URL", "http://localhost:11434")
 logger.info(f"BREWCTL_LLM_BASE_URL = {BREWCTL_LLM_BASE_URL}")
 
-BREWCTL_LLM_MODEL = os.environ.get("BREWCTL_LLM_MODEL", "llama3.2:3b")
+BREWCTL_LLM_MODEL = os.environ.get("BREWCTL_LLM_MODEL", "phi4-mini")
 logger.info(f"BREWCTL_LLM_MODEL = {BREWCTL_LLM_MODEL}")
 
-BREWCTL_LLM_TIMEOUT_SECONDS = float(os.environ.get("BREWCTL_LLM_TIMEOUT_SECONDS", "15.0"))
+BREWCTL_LLM_TIMEOUT_SECONDS = float(os.environ.get("BREWCTL_LLM_TIMEOUT_SECONDS", "30.0"))
 logger.info(f"BREWCTL_LLM_TIMEOUT_SECONDS = {BREWCTL_LLM_TIMEOUT_SECONDS}")
 
 # Unused by Ollama, which does not authenticate. Present so the strategy can

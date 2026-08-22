@@ -371,9 +371,9 @@ export const STRATEGIES: Strategy[] = [
       {
         name: "model",
         label: "Model",
-        placeholder: "llama3.2:3b",
-        defaultValue: "llama3.2:3b",
-        description: "Ollama model tag; gemma2:2b is the faster fallback",
+        placeholder: "phi4-mini",
+        defaultValue: "phi4-mini",
+        description: "Instruct model, not a reasoning one -- see docs for why",
       },
       {
         name: "base_url",
@@ -392,16 +392,16 @@ export const STRATEGIES: Strategy[] = [
       {
         name: "timeout_seconds",
         label: "Request Timeout (s)",
-        placeholder: "15",
-        defaultValue: "15",
+        placeholder: "30",
+        defaultValue: "30",
         description: "Per-call timeout before falling back to the default strategy",
       },
       {
         name: "history_points",
         label: "History Points",
-        placeholder: "12",
-        defaultValue: "12",
-        description: "Recent readings shown to the model as context",
+        placeholder: "3",
+        defaultValue: "3",
+        description: "Recent readings as context; more is measurably worse",
       },
       {
         name: "min_interval",
@@ -416,6 +416,13 @@ export const STRATEGIES: Strategy[] = [
         placeholder: "90",
         defaultValue: "90",
         description: "Ceiling on the wait the model asks for",
+      },
+      {
+        name: "max_flow_rate_multiple",
+        label: "Max Flow (x target)",
+        placeholder: "4",
+        defaultValue: "4",
+        description: "Above this multiple of target, the valve closes whatever the model says",
       },
     ],
   },

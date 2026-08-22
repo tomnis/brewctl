@@ -20,8 +20,10 @@
 #   TRUENAS_API_KEY   API key with APPS_WRITE
 #   TRUENAS_APP       app name (default brewctl). This is the app's id in the
 #                     TrueNAS API -- whatever it was named in the Custom App UI.
-#   BREWCTL_API_URL   where the running api is reachable, for the brew preflight
-#                     (default http://192.168.0.69:8000)
+#   BREWCTL_API_URL   where the running api is reachable, for the brew
+#                     preflight and the post-deploy health poll. Required --
+#                     no default. Put it in deploy/control/deploy.env
+#                     (untracked; see env.example beside it) or export it.
 #
 # The deploy logic lives here rather than in workflow YAML on purpose: applying is
 # one idempotent PUT of one file, so whether it is invoked by CI (push) or by a
@@ -56,8 +58,24 @@ while (( $# )); do
     shift
 done
 
+# ----------------------------------------------------------------- deploy.env --
+# Optional local config, resolved against THIS script's directory (make and CI
+# both invoke from the repo root, never from here). Sourced before any
+# defaults so file values can feed every variable below. Real environment wins:
+# only variables still unset are taken from the file, so Forgejo-exported vars
+# in CI and ad-hoc overrides on the command line always keep precedence.
+deploy_env="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy.env"
+if [[ -r "$deploy_env" ]]; then
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        if [[ -n "$key" && -z "${!key:-}" ]]; then
+            export "$key=$value"
+        fi
+    done < <(grep -v '^[[:space:]]*$' "$deploy_env")
+fi
+
 TRUENAS_APP="${TRUENAS_APP:-brewctl}"
-BREWCTL_API_URL="${BREWCTL_API_URL:-http://192.168.0.69:8000}"
+BREWCTL_API_URL="${BREWCTL_API_URL:-}"
 DEPLOY_TIMEOUT_SECONDS="${DEPLOY_TIMEOUT_SECONDS:-180}"
 
 # The TrueNAS cert is the self-signed iXsystems one, so verification cannot
@@ -118,6 +136,7 @@ fi
 
 [[ -n "${TRUENAS_URL:-}" ]] || die "TRUENAS_URL is not set"
 [[ -n "${TRUENAS_API_KEY:-}" ]] || die "TRUENAS_API_KEY is not set"
+[[ -n "$BREWCTL_API_URL" ]] || die "BREWCTL_API_URL is not set (cp deploy/control/env.example deploy/control/deploy.env, fill it in -- or export the variable)"
 command -v jq >/dev/null || die "jq is required"
 
 AUTH=(-H "Authorization: Bearer $TRUENAS_API_KEY")

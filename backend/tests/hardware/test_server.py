@@ -141,3 +141,65 @@ def test_scale_not_available(hardware_client):
         assert "scale not available" in response.json()["detail"]
     finally:
         hw_server.scale = original_scale
+
+
+class TestScaleHealthReporting:
+    """
+    A connected scale that has stopped streaming readings must be visible as such.
+    `connected` alone cannot show it: pyacaia sets that flag before any weight
+    packet arrives and never clears it when the notification stream dies.
+    """
+
+    def test_status_reports_health_and_age(self, hardware_client):
+        data = hardware_client.get("/api/scale/status").json()
+
+        assert data["healthy"] is True
+        assert data["last_weight_age_seconds"] == 0.1
+
+    def test_connected_but_stale_is_unhealthy(
+        self, hardware_client, hardware_mock_scale
+    ):
+        hardware_mock_scale.is_weight_stale.return_value = True
+        hardware_mock_scale.last_weight_age_seconds.return_value = 45.0
+
+        data = hardware_client.get("/api/scale/status").json()
+
+        assert data["connected"] is True
+        assert data["healthy"] is False
+        assert data["last_weight_age_seconds"] == 45.0
+
+    def test_health_endpoint_carries_the_verdict(
+        self, hardware_client, hardware_mock_scale
+    ):
+        hardware_mock_scale.is_weight_stale.return_value = True
+
+        data = hardware_client.get("/health").json()
+
+        # The top-level status is a liveness signal for container probes and
+        # apply.sh -- a dead scale is not a dead service.
+        assert data["status"] == "healthy"
+        assert data["scale"]["connected"] is True
+        assert data["scale"]["healthy"] is False
+
+    def test_a_raising_read_degrades_rather_than_500s(
+        self, hardware_client, hardware_mock_scale
+    ):
+        """An unguarded BLE exception used to take out /health and the SSE stream."""
+        hardware_mock_scale.get_weight.side_effect = RuntimeError("BLE disconnected")
+
+        response = hardware_client.get("/api/scale/status")
+
+        assert response.status_code == 200
+        assert response.json()["weight"] is None
+
+    def test_status_payload_is_json_serialisable(self, hardware_mock_scale):
+        """The SSE generator json.dumps() this dict -- a MagicMock in it raises."""
+        import json
+
+        import brewctl.hardware.server as hw_server
+
+        hw_server.scale = hardware_mock_scale
+        try:
+            json.dumps(hw_server._read_scale_status())
+        finally:
+            hw_server.scale = None

@@ -279,3 +279,90 @@ class TestRequest:
         ):
             strategy.step(0.05, 300.0)
         assert client.post.call_args.kwargs["headers"]["Authorization"] == "Bearer sekrit"
+
+
+class TestSafetyGuard:
+    """The two decisions the model is not allowed to get wrong.
+
+    Both were found by benchmarking at 10 reps: predictive-mode models answered
+    FORWARD on an unknown flow rate (having invented one from the history) and
+    NOOP on a 5.0 g/s runaway (having read a rising history as "trending toward
+    the band"). The prompt was fixed too, but only this guard makes them
+    impossible.
+    """
+
+    @pytest.mark.parametrize("action", ["FORWARD", "BACKWARD", "NOOP"])
+    def test_unknown_flow_is_forced_to_noop(self, action):
+        strategy = make_strategy()
+        content = f'{{"action": "{action}", "interval_seconds": 30, "reason": "x"}}'
+        with patch_client(llm_response(content)):
+            command, _ = strategy.step(None, 500)
+        assert command == ValveCommand.NOOP
+
+    @pytest.mark.parametrize("action", ["FORWARD", "NOOP"])
+    def test_runaway_flow_is_forced_backward(self, action):
+        strategy = make_strategy()
+        content = f'{{"action": "{action}", "interval_seconds": 30, "reason": "x"}}'
+        with patch_client(llm_response(content)):
+            command, _ = strategy.step(5.0, 500)
+        assert command == ValveCommand.BACKWARD
+
+    def test_ceiling_is_a_multiple_of_target(self):
+        strategy = make_strategy(target_flow_rate=0.05, max_flow_rate_multiple=4.0)
+        assert strategy.max_flow_rate == pytest.approx(0.20)
+
+    def test_flow_below_the_ceiling_is_left_to_the_model(self):
+        """0.09 g/s is far too fast but not a runaway -- the model still decides."""
+        strategy = make_strategy()
+        content = '{"action": "NOOP", "interval_seconds": 30, "reason": "x"}'
+        with patch_client(llm_response(content)):
+            command, _ = strategy.step(0.09, 500)
+        assert command == ValveCommand.NOOP
+
+    def test_guard_is_inert_on_normal_readings(self):
+        strategy = make_strategy()
+        content = '{"action": "FORWARD", "interval_seconds": 30, "reason": "x"}'
+        with patch_client(llm_response(content)):
+            command, _ = strategy.step(0.041, 500)
+        assert command == ValveCommand.FORWARD
+
+    def test_guard_applies_to_the_fallback_path_too(self):
+        """A different code path is not a trusted one."""
+        strategy = make_strategy()
+        with patch_client(failing_client(httpx.ConnectError("down"))):
+            command, _ = strategy.step(5.0, 500)
+        assert command == ValveCommand.BACKWARD
+
+    def test_guard_does_not_block_the_target_weight_stop(self):
+        """STOP comes from Python before the model is consulted; the guard must not eat it."""
+        strategy = make_strategy()
+        with patch_client(llm_response('{"action": "NOOP", "interval_seconds": 30, "reason": "x"}')):
+            command, _ = strategy.step(None, 1337 + 229)
+        assert command == ValveCommand.STOP
+
+
+class TestPredictivePrompt:
+    def test_predicted_flow_rate_is_nullable(self):
+        from brewctl.api.strategies.AIBrewStrategy import _PREDICTIVE_SCHEMA
+
+        assert _PREDICTIVE_SCHEMA["properties"]["predicted_flow_rate"]["type"] == [
+            "number",
+            "null",
+        ]
+
+    def test_trend_override_is_left_unbounded(self):
+        """Bounding it was measured and reverted -- see the comment in _build_messages.
+
+        Explicit magnitude bounds did not stop either model opening the valve on a
+        runaway, and cost qwen3.5:9b its dead-time behaviour. Magnitude safety is
+        _guard()'s job; this line stays about trend only.
+        """
+        strategy = make_strategy(predictive=True)
+        system = strategy._build_messages(0.041, 500)[0]["content"]
+        assert "already moving toward it" in system
+        assert "0.0260" not in system and "0.0740" not in system
+
+    def test_unknown_flow_rule_precedes_the_band_rules(self):
+        strategy = make_strategy(predictive=True)
+        system = strategy._build_messages(None, 500)[0]["content"]
+        assert system.index("unknown") < system.index("predicted_flow_rate <")

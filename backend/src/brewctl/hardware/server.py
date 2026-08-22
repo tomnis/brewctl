@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import threading
@@ -20,6 +21,25 @@ from brewctl.hardware.config import *
 
 SCALE_SSE_INTERVAL = 2.0
 VALVE_SSE_INTERVAL = 2.0
+
+# A connected scale that has not produced a reading within this many seconds is
+# unhealthy, not merely quiet: the Lunar streams at 5 Hz, so anything past a few
+# seconds means the BLE notification stream is dead. Comfortably above
+# SCALE_SSE_INTERVAL so a slow tick alone never trips it.
+SCALE_MAX_WEIGHT_AGE_SECONDS = float(
+    os.getenv("BREWCTL_SCALE_MAX_WEIGHT_AGE_SECONDS", "10.0")
+)
+SCALE_MONITOR_INTERVAL_SECONDS = float(
+    os.getenv("BREWCTL_SCALE_MONITOR_INTERVAL_SECONDS", "5.0")
+)
+
+# pyacaia logs the one line that explains a silent scale -- "Heartbeat failed <e>"
+# from the thread that owns both the keepalive and the notification pump -- at
+# DEBUG, and swallows the exception. Set BREWCTL_HARDWARE_LOG_LEVEL=DEBUG on the
+# Pi to see it. Done here rather than in core/log.py, which hardware/config.py
+# imports (a cycle) and which the api process loads too.
+for _noisy in ("pyacaia", "bluepy"):
+    logging.getLogger(_noisy).setLevel(BREWCTL_HARDWARE_LOG_LEVEL)
 
 
 
@@ -145,6 +165,48 @@ async def hardware_watchdog():
                 feed_watchdog()
 
 
+async def scale_monitor():
+    """
+    Reconnect the scale when it stops delivering readings.
+
+    `connected` alone is not a health signal. pyacaia sets it as soon as the BLE
+    notification subscription is set up -- before any weight packet arrives -- and
+    `AcaiaScale.weight` stays None until one does. If the thread that pumps
+    notifications dies, the flag stays True and every read returns None until the
+    process restarts. That is the failure this task exists to break.
+
+    Rebuilding the AcaiaScale (what reconnect_with_backoff does) is what re-sends
+    the one-shot notification request, so a reconnect is the only fix.
+
+    This is also the only thing that connects the scale at startup.
+    """
+    while True:
+        await asyncio.sleep(SCALE_MONITOR_INTERVAL_SECONDS)
+        try:
+            # Re-read the global each tick rather than capturing it: tests (and
+            # the disconnect endpoint) swap it out from under us.
+            s = scale
+            if s is None:
+                continue
+
+            if s.healthy(SCALE_MAX_WEIGHT_AGE_SECONDS):
+                continue
+
+            age = s.last_weight_age_seconds()
+            logger.warning(
+                f"Scale unhealthy (connected={s.connected}, "
+                f"last reading {'never' if age is None else f'{age:.1f}s ago'}). "
+                "Reconnecting."
+            )
+            metrics.scale_reconnects.inc()
+            # Blocking BLE work -- reconnect_with_backoff sleeps between attempts.
+            await asyncio.to_thread(s.reconnect_with_backoff)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Scale monitor error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global valve, scale
@@ -159,13 +221,17 @@ async def lifespan(app: FastAPI):
     scale = create_scale()
     logger.info("Scale initialized")
 
+    # Connects the scale on its first tick, then keeps it connected.
+    scale_monitor_task = asyncio.create_task(scale_monitor())
+
     yield
 
-    watchdog_task.cancel()
-    try:
-        await watchdog_task
-    except asyncio.CancelledError:
-        pass
+    for task in (watchdog_task, scale_monitor_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     if valve:
         valve.release()
@@ -209,12 +275,17 @@ async def health():
 
     scale_health = {
         "connected": False,
+        "healthy": False,
+        "last_weight_age_seconds": None,
         "weight": None,
         "units": None,
         "battery_pct": None,
     }
     try:
-        if scale and scale.connected:
+        if scale:
+            # Deliberately not gated on scale.connected: the all-None fallback
+            # above is indistinguishable from a scale that is present but silent,
+            # and the "healthy" field is the whole point of this payload.
             scale_health = await asyncio.to_thread(_read_scale_status)
     except Exception as e:
         logger.error(f"Error checking scale health: {e}")
@@ -397,12 +468,27 @@ async def sse_valve_status():
 def _read_scale_status() -> dict:
     """Read all scale values. Blocking (BLE) -- call via asyncio.to_thread."""
     connected = scale.connected
+    weight = units = battery_pct = None
+    if connected:
+        try:
+            weight = scale.get_weight()
+            units = scale.get_units()
+            battery_pct = scale.get_battery_percentage()
+        except Exception as e:
+            # A raising BLE read used to take out the SSE generator and /health
+            # along with it. Degrade the payload instead; scale_monitor reconnects.
+            logger.warning(f"Scale read failed: {e}")
+
+    healthy = connected and not scale.is_weight_stale(SCALE_MAX_WEIGHT_AGE_SECONDS)
     metrics.scale_connected.set(1 if connected else 0)
+    metrics.scale_healthy.set(1 if healthy else 0)
     return {
         "connected": connected,
-        "weight": scale.get_weight() if connected else None,
-        "units": scale.get_units() if connected else None,
-        "battery_pct": scale.get_battery_percentage() if connected else None,
+        "healthy": healthy,
+        "last_weight_age_seconds": scale.last_weight_age_seconds(),
+        "weight": weight,
+        "units": units,
+        "battery_pct": battery_pct,
     }
 
 

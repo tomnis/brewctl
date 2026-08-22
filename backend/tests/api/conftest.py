@@ -17,6 +17,12 @@ def mock_scale():
     scale.get_battery_percentage.return_value = 75
     scale.get_units.return_value = "g"
     scale.disconnect.return_value = None
+    # Emulates an up-to-date, working hardware scale. Explicit because the
+    # polarity matters: an unconfigured MagicMock is truthy, so is_healthy()
+    # would read as healthy by accident rather than by intent.
+    scale.is_healthy.return_value = True
+    scale.last_weight_age_seconds.return_value = 0.1
+    scale.wait_for_first_frame.return_value = True
     return scale
 
 
@@ -69,12 +75,33 @@ def client(mock_scale, mock_valve, mock_time_series):
         patch("brewctl.api.http_valve.HttpValve", return_value=mock_valve),
         patch("brewctl.api.server.time_series", mock_time_series),
     ):
+        import brewctl.api.server as server_module
+
+        # Rebind the module globals to THIS test's mocks on every use, not just at
+        # first import. api/server.py instantiates HttpScale/HttpValve at import time,
+        # so the class patches above only bind on the first import: without this,
+        # one shared mock pair is donated to every later test, and any test that
+        # mutates its fixture mock directly (e.g. the version-mismatch test setting
+        # hardware_api_version) poisons all inheritors. That made filtered runs
+        # (`pytest -k ...`) fail with 409s depending purely on alphabetical file
+        # order. Rebinding here makes fixture-mock mutations test-local.
+        #
+        # _real_scale/_real_valve must be rebound too: _restore_hardware() hands the
+        # globals back to these (server.py:154-157), and test_dry_run.py asserts
+        # identity between scale/valve and _real_*/_real_valve (:84-85,:101-102,:113)
+        # and drives a real-brew 409 by mutating _real_valve.hardware_api_version
+        # (:59-70). Leaving _real_* at the first-import pair breaks those tests the
+        # moment any other test imported api.server first. These four names have no
+        # other readers anywhere in src/ or tests/.
+        server_module.scale = mock_scale
+        server_module.valve = mock_valve
+        server_module._real_scale = mock_scale
+        server_module._real_valve = mock_valve
+
         from brewctl.api.server import app
 
         with TestClient(app) as test_client:
             yield test_client
-
-    import brewctl.api.server as server_module
 
     _reset_server_globals(server_module)
 
@@ -90,6 +117,11 @@ def _reset_server_globals(server_module):
     server_module.cur_base_params = None
     server_module.strategy_switch_event = None
     server_module._last_strategy_switch_at = None
+    # Swapped hardware is brew state too. A test that starts a dry run without
+    # stopping it leaves scale/valve pointing at the simulated devices, and the
+    # *next* test's lifespan then calls connect() on a MockValve. Same leak
+    # _restore_hardware exists to prevent in production, just via pytest.
+    server_module._restore_hardware()
 
 
 @pytest.fixture

@@ -59,6 +59,8 @@ class TestEndpoint:
         for name in (
             "brewctl_watchdog_trips_total",
             "brewctl_scale_connected",
+            "brewctl_scale_healthy",
+            "brewctl_scale_reconnects_total",
             "brewctl_sse_clients",
         ):
             assert name in body

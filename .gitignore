@@ -143,6 +143,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+deploy/control/deploy.env
 .venv
 env/
 venv/
@@ -206,6 +207,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+.hermes/
 
 # Marimo
 marimo/_static/

@@ -35,9 +35,11 @@ set -uo pipefail   # no -e; the decision below is made explicitly, not by exit c
 # service restart that follows is per-push, not per-ref.
 cat >/dev/null
 
-BREWCTL_API_URL="${BREWCTL_API_URL:-http://192.168.0.69:8000}"
-# Optional, and optional on purpose: the default above matches apply.sh, so a Pi
-# needs no new config unless the api moves. install.sh does not write this file.
+BREWCTL_API_URL="${BREWCTL_API_URL:-}"
+# Required, read from /etc/brewctl/deploy.env -- provisioned by install.sh.
+# There is deliberately no fallback literal: a wrong guess here would silently
+# weaken the brew gate below (an unreachable api fails open). Without the
+# variable the push is refused; -o brewctl-force remains the escape hatch.
 # shellcheck disable=SC1091
 [[ -r /etc/brewctl/deploy.env ]] && . /etc/brewctl/deploy.env
 
@@ -59,6 +61,22 @@ for (( i = 0; i < ${GIT_PUSH_OPTION_COUNT:-0}; i++ )); do
     varname="GIT_PUSH_OPTION_$i"
     [[ "${!varname:-}" == "brewctl-force" ]] && forced=1
 done
+
+# ------------------------------------------------------------- api url gate ---
+# Without an endpoint the brew-state check cannot run, and this gate fails open
+# on unreachable apis by design -- so a missing URL must NOT silently skip the
+# gate. Refuse, with the always-available force escape first. (Checked after
+# the force parsing above so that escape needs no config.)
+if [[ -z "$BREWCTL_API_URL" ]]; then
+    if [[ "$forced" == 1 ]]; then
+        warn "BREWCTL_API_URL is not set -- skipping the brew gate entirely."
+        exit 0   # nothing follows this hook but approval; post-receive restarts
+    else
+        die "BREWCTL_API_URL is not set, so the brew gate cannot run." \
+            "Push anyway (skips this check): git push -o brewctl-force" \
+            "Or configure once: put BREWCTL_API_URL=http://<control-ip>:8000 in /etc/brewctl/deploy.env"
+    fi
+fi
 
 # ------------------------------------------------------------ brew state ---
 # python3 rather than curl+jq: preflight.sh verifies neither of those on the Pi,

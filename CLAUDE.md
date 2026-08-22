@@ -207,6 +207,21 @@ not trigger runs.
   the exact string `true` makes the hardware service run `MockScale`/`MockValve`: it starts cleanly,
   `/health` reports healthy, and no physical device moves. After any config change on the Pi, check
   `journalctl -u brewctl-hardware | grep -iE 'production|mock'`.
+- **A `connected` scale is not a working scale.** pyacaia sets `connected` when the BLE
+  notification subscription is set up -- before any weight packet arrives -- and never clears it if
+  the thread pumping notifications dies. `AcaiaScale.weight` starts `None` and is only ever set by a
+  packet, so `connected=True` + `weight=None` is a sticky state that used to persist until the
+  hardware service restarted. `AbstractScale` therefore tracks `note_weight()` /
+  `is_weight_stale()` / `healthy()`, `scale_monitor()` in `hardware/server.py` reconnects a scale
+  that fails that check (rebuilding the `AcaiaScale` is what re-sends the one-shot notification
+  request), and it is also the only thing that connects the scale at startup. Staleness is judged
+  **only on the Pi** -- `HttpScale` mirrors the `healthy` field off SSE rather than computing its
+  own, since a freshly built `HttpScale` has never seen a reading and would look identical to a dead
+  scale. `start_brew` 409s `scale_unhealthy` on an explicit `False`; `None` (a v1 Pi, or a dry run's
+  `SimulatedScale`) means unknown and allows the brew. `LunarScale.disconnect()` must not null
+  `self.scale` -- it did, and every later read raised `AttributeError` instead of reporting a
+  disconnected scale, leaving nothing able to drive recovery.
+
 - **The Pi never self-updates.** It changes only when someone runs `make deploy-device` (a push to the
   `coldbrewer` remote, whose `post-receive` hook runs `deploy/device/install.sh --deps-only` and restarts
   the unit; unit/env/sudoers changes need a full `install.sh` run on the Pi). The control host deploys
@@ -247,7 +262,11 @@ not trigger runs.
 - `tests/api/conftest.py` patches `HttpScale`/`HttpValve` as *classes*, but `api/server.py`
   instantiates them at import time. A test module with a top-level `import brewctl.api.server` binds
   the real classes and breaks ~12 unrelated tests with 503s — import the module inside a fixture that
-  depends on `client`.
+  depends on `client`. The `client` fixture also rebinds `server.scale`/`server.valve`/`_real_scale`/
+  `_real_valve` to the current test's mocks on every use (not just at first import), so no test
+  inherits another's fixture-mock mutations and filtered runs (`pytest -k ...`) are order-independent.
+  Corollary: lifespan startup's `connect()`/heartbeat now land on the *test's* mock — fixtures that
+  count calls on it must `reset_mock()` first (`test_heartbeat.py::heartbeat_valve`).
 - Tests are split `tests/core`, `tests/api`, `tests/hardware`, each with its own `conftest.py`
   (`client` for the api app, `hardware_client` for the hardware app).
 - README's endpoint tables are **generated** — `make docs` runs

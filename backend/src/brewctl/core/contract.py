@@ -20,9 +20,13 @@ Pi is updated.
 History:
   1 -- POST /api/valve/heartbeat, and a watchdog that closes the valve when
        heartbeats stop. Reported in /health and in the heartbeat response.
+  2 -- Scale health. /health and the scale status payloads gain "healthy" and
+       "last_weight_age_seconds", and a monitor task reconnects a scale that is
+       connected but no longer streaming readings. The api's brew gate reads
+       "healthy"; a v1 Pi omits it, which the api treats as "unknown, allow".
 """
 
-HARDWARE_API_VERSION = 1
+HARDWARE_API_VERSION = 2
 
 # The oldest hardware the api will start a brew against.
 MIN_HARDWARE_API_VERSION = 1

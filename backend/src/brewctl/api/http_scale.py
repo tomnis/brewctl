@@ -23,6 +23,15 @@ class HttpScale(AbstractScale):
         self._weight: float | None = None
         self._units: str | None = None
         self._battery_pct: int | None = None
+        # Mirrored from the hardware payload rather than computed here. Only the Pi
+        # sees real BLE packets; a locally-computed staleness would just measure how
+        # long ago this object was constructed. None means the hardware service did
+        # not send the field -- a v1 Pi -- which callers must read as "unknown".
+        self._healthy: bool | None = None
+        self._last_weight_age: float | None = None
+        # Set once the first SSE frame lands, so callers can wait for one instead of
+        # judging a scale that has simply not been heard from yet.
+        self._first_frame = threading.Event()
 
         # Thread safety
         self._lock = threading.RLock()
@@ -43,6 +52,21 @@ class HttpScale(AbstractScale):
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse SSE data: {e}")
         return None
+
+    def _invalidate_cache(self):
+        """Drop the cached reading when the stream breaks.
+
+        Clearing the weight matters as much as the connected flag: a brew computes
+        flow from these values, and a frozen reading looks exactly like a stalled
+        pour rather than a lost connection.
+        """
+        with self._lock:
+            self._connected = False
+            self._weight = None
+            self._units = None
+            self._battery_pct = None
+            self._healthy = False
+            self._last_weight_age = None
 
     def _run_sse_listener(self):
         """Background thread that listens to SSE stream."""
@@ -73,24 +97,28 @@ class HttpScale(AbstractScale):
                                         self._weight = None
                                         self._units = None
                                         self._battery_pct = None
+                                        self._healthy = False
+                                        self._last_weight_age = None
                                     else:
                                         self._connected = data.get("connected", False)
                                         self._weight = data.get("weight")
                                         self._units = data.get("units")
                                         self._battery_pct = data.get("battery_pct")
+                                        self._healthy = data.get("healthy")
+                                        self._last_weight_age = data.get(
+                                            "last_weight_age_seconds"
+                                        )
+                                self._first_frame.set()
 
             except httpx.ConnectError as e:
                 logger.warning(f"Cannot connect to scale SSE: {e}")
-                with self._lock:
-                    self._connected = False
+                self._invalidate_cache()
             except httpx.HTTPError as e:
                 logger.error(f"HTTP error in SSE connection: {e}")
-                with self._lock:
-                    self._connected = False
+                self._invalidate_cache()
             except Exception as e:
                 logger.error(f"Unexpected error in SSE listener: {e}")
-                with self._lock:
-                    self._connected = False
+                self._invalidate_cache()
 
             # Wait before reconnecting
             if not self._stop_event.is_set():
@@ -108,6 +136,9 @@ class HttpScale(AbstractScale):
 
     def connect(self):
         """Start the SSE listener thread and connect the hardware scale."""
+        # A reconnected stream has to deliver a frame before its cache means
+        # anything again.
+        self._first_frame.clear()
         # First, call the hardware server to connect the physical scale
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -144,11 +175,7 @@ class HttpScale(AbstractScale):
         except httpx.HTTPError as e:
             logger.warning(f"Failed to disconnect hardware scale: {e}")
 
-        with self._lock:
-            self._connected = False
-            self._weight = None
-            self._units = None
-            self._battery_pct = None
+        self._invalidate_cache()
 
     def get_weight(self) -> float | None:
         with self._lock:
@@ -161,6 +188,34 @@ class HttpScale(AbstractScale):
     def get_battery_percentage(self) -> int | None:
         with self._lock:
             return self._battery_pct
+
+    def healthy(self, max_age: float) -> bool:
+        """Override: staleness is the hardware service's call, not ours.
+
+        AbstractScale.healthy() measures against note_weight(), which nothing sets
+        on this class -- reads are served from the SSE cache, not from a device.
+        An unknown verdict (a v1 Pi) counts as healthy; the brew gate refuses only
+        on an explicit False.
+        """
+        return self.connected and self.is_healthy() is not False
+
+    def is_healthy(self) -> bool | None:
+        """Hardware's verdict, or None if it does not report one (a v1 Pi)."""
+        with self._lock:
+            return self._healthy
+
+    def last_weight_age_seconds(self) -> float | None:
+        with self._lock:
+            return self._last_weight_age
+
+    def wait_for_first_frame(self, timeout: float) -> bool:
+        """Block until one SSE frame has landed. False on timeout.
+
+        A freshly constructed HttpScale knows nothing; the hardware tick is
+        SCALE_SSE_INTERVAL (2s) while reconnect_with_backoff only sleeps 0.5s, so
+        without this any health check runs before the first frame can arrive.
+        """
+        return self._first_frame.wait(timeout)
 
     def reconnect_with_backoff(self) -> bool:
         """

@@ -482,6 +482,9 @@ Values are read at import time, so changes require a process restart.
 | `BREWCTL_VALVE_MOTOR_NUMBER` | `1` | MotorKit stepper driving the valve (1 or 2) |
 | `BREWCTL_WATCHDOG_TIMEOUT_SECONDS` | `10.0` | Deadman switch, fast tier: used while heartbeats are arriving |
 | `BREWCTL_WATCHDOG_BACKSTOP_SECONDS` | `300.0` | Deadman switch, slow tier: used when no heartbeat has been seen recently. Must exceed `BREWCTL_VALVE_INTERVAL_SECONDS` with margin |
+| `BREWCTL_SCALE_MAX_WEIGHT_AGE_SECONDS` | `10.0` | A connected scale with no reading this recent is reported unhealthy and reconnected |
+| `BREWCTL_SCALE_MONITOR_INTERVAL_SECONDS` | `5.0` | How often that is checked. Also connects the scale at startup |
+| `BREWCTL_HARDWARE_LOG_LEVEL` | `INFO` | Applied to `pyacaia`/`bluepy`. `DEBUG` surfaces pyacaia's `Heartbeat failed`, the only evidence of why a scale went silent |
 
 The watchdog closes the valve if nothing feeds it within the *effective* timeout:
 
@@ -500,7 +503,7 @@ unguarded and a rollback decays back to the slow tier on its own.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BREWCTL_HARDWARE_URL` | - | The Pi's address, e.g. `http://192.168.0.224:8000`. Use an IP, not mDNS |
+| `BREWCTL_HARDWARE_URL` | - | The Pi's address, Use an IP, not mDNS |
 | `BREWCTL_INFLUXDB_URL` | - | InfluxDB URL. Unset disables time series |
 | `BREWCTL_INFLUXDB_TOKEN` | - | InfluxDB auth token. Prefer the `_FILE` form below |
 | `BREWCTL_INFLUXDB_TOKEN_FILE` | - | Path to a file holding the token, e.g. `/run/secrets/influxdb_token`. Takes precedence, and **raises at startup** if set but unreadable rather than silently using an empty token |

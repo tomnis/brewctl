@@ -44,7 +44,8 @@ def _declare() -> None:
     """(Re)declare every metric against the current registry."""
     global flow_rate, flow_rate_error, valve_position, valve_commands
     global brews, scale_data_age, influx_write_failures
-    global watchdog_trips, scale_connected, sse_clients
+    global watchdog_trips, scale_connected, scale_healthy
+    global scale_reconnects, sse_clients
 
     # --- api service ---------------------------------------------------------
     flow_rate = Gauge(
@@ -100,6 +101,18 @@ def _declare() -> None:
     scale_connected = Gauge(
         "brewctl_scale_connected",
         "1 when the scale reports connected, 0 otherwise.",
+        registry=REGISTRY,
+    )
+    scale_healthy = Gauge(
+        "brewctl_scale_healthy",
+        "1 when the scale is connected AND has delivered a reading recently. A "
+        "connected-but-silent scale reports scale_connected 1 and this 0.",
+        registry=REGISTRY,
+    )
+    scale_reconnects = Counter(
+        "brewctl_scale_reconnects",
+        "Reconnect cycles started by the scale monitor. One cycle is a whole "
+        "reconnect_with_backoff() call, not an individual attempt.",
         registry=REGISTRY,
     )
     sse_clients = Gauge(
